@@ -5,6 +5,14 @@ edition = "2021"
 authors = ["Trading Bot Team"]
 description = "Ultra-fast manual trading execution bot for Polymarket"
 
+[lib]
+name = "ultra_fast_manual_trading_execution_bot"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ultra_fast_manual_trading_execution_bot"
+path = "src/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.40", features = ["full", "rt-multi-thread"] }
@@ -42,6 +50,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 bytes = { version = "1.7", features = ["serde"] }
 hex = "0.4"
 futures = "0.3"
+fastrand = "2.1"
 
 # Optional web UI
 # axum = "0.8"

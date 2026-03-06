@@ -106,7 +106,16 @@ mod tests {
     async fn test_execution_engine_creation() {
         let client = Arc::new(PolymarketClient::new("test_url".to_string(), None));
         let engine = ExecutionEngine::new(client);
-        assert!(engine.get_execution_sender().capacity() > 0);
+        // UnboundedSender doesn't have capacity() method, so just check it's not None
+        let result = engine.get_execution_sender().send(ExecutionRequest::new(
+            "test".to_string(), 
+            Arc::new(crate::execution::prepared_orders::PreparedOrders::new(
+                "test".to_string(),
+                Default::default(),
+                Default::default(),
+            ))
+        )).await;
+        assert!(result.is_ok());
     }
 
     #[test]
