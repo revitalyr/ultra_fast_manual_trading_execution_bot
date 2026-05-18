@@ -41,6 +41,7 @@ impl PreparedOrder {
         }
     }
 
+    #[allow(dead_code)] // This method is a builder helper but not used in the current demo flow
     pub fn with_signature(mut self, signature: Bytes) -> Self {
         self.signature = Some(signature);
         self
@@ -71,6 +72,7 @@ pub struct PreparedOrders {
     pub match_id: String,
     pub goal_market_order: PreparedOrder,
     pub match_result_order: PreparedOrder,
+    #[allow(dead_code)] // This field is not currently read, but useful for debugging/future features
     pub updated_at: u64,
 }
 

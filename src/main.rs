@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     let match_manager = Arc::new(MatchManager::new(execution_engine.clone()));
 
     // Configure matches (these would come from config file in production)
-    configure_matches(&match_manager)?;
+    configure_matches(&match_manager).await?;
 
     // Start all match engines
     match_manager.start_all().await?;
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn configure_matches(match_manager: &Arc<MatchManager>) -> Result<()> {
+async fn configure_matches(match_manager: &Arc<MatchManager>) -> Result<()> {
     // Example matches - in production these would be loaded from config
     let matches = vec![
         MatchConfig::new(
@@ -90,7 +90,7 @@ fn configure_matches(match_manager: &Arc<MatchManager>) -> Result<()> {
     ];
 
     for match_config in matches {
-        match_manager.add_match(match_config)?;
+        match_manager.add_match(match_config).await?;
         info!("Match configured successfully");
     }
 

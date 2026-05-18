@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
+#[allow(dead_code)] // This struct is part of the architecture but not used in the current demo flow
 pub struct MarketDataListener {
     websocket_url: String,
     update_tx: mpsc::UnboundedSender<MarketUpdate>,
@@ -14,6 +15,7 @@ pub struct MarketDataListener {
 
 impl MarketDataListener {
     pub fn new(websocket_url: String, update_tx: mpsc::UnboundedSender<MarketUpdate>) -> Self {
+        #[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
         Self {
             websocket_url,
             update_tx,
@@ -21,6 +23,7 @@ impl MarketDataListener {
     }
 
     pub async fn start(&self) -> Result<()> {
+        #[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
         let (ws_stream, _) = connect_async(&self.websocket_url).await?;
         info!("Connected to market data WebSocket: {}", self.websocket_url);
 
@@ -48,7 +51,7 @@ impl MarketDataListener {
                         }
                     }
                 }
-                Ok(Message::Binary(data)) => {
+                Ok(Message::Binary(_data)) => {
                     warn!("Received binary data, ignoring");
                 }
                 Ok(Message::Close(_)) => {
@@ -66,6 +69,7 @@ impl MarketDataListener {
         Ok(())
     }
 
+    #[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
     fn parse_message(&self, message: &str) -> Option<MarketUpdate> {
         let value: Value = serde_json::from_str(message).ok()?;
         
@@ -102,10 +106,12 @@ impl MarketDataListener {
     }
 }
 
+#[allow(dead_code)] // This struct is part of the architecture but not used in the current demo flow
 pub struct MarketDataManager {
     listeners: Vec<Arc<MarketDataListener>>,
 }
 
+#[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
 impl MarketDataManager {
     pub fn new() -> (Self, mpsc::UnboundedReceiver<MarketUpdate>) {
         let (_update_tx, update_rx) = mpsc::unbounded_channel();
@@ -115,6 +121,7 @@ impl MarketDataManager {
         (manager, update_rx)
     }
 
+    #[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
     pub fn add_listener(&mut self, websocket_url: String) -> mpsc::UnboundedSender<MarketUpdate> {
         let (update_tx, _) = mpsc::unbounded_channel();
         let listener = Arc::new(MarketDataListener::new(websocket_url, update_tx.clone()));
@@ -122,6 +129,7 @@ impl MarketDataManager {
         update_tx
     }
 
+    #[allow(dead_code)] // This method is part of the architecture but not used in the current demo flow
     pub async fn start_all(&self) -> Result<()> {
         let handles: Vec<_> = self.listeners
             .iter()

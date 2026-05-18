@@ -36,13 +36,19 @@ impl ExecutionEngine {
         engine
     }
 
+    #[allow(dead_code)] // Used in examples/demo.rs, but not directly in lib.rs or main.rs
     pub fn get_execution_sender(&self) -> mpsc::UnboundedSender<ExecutionRequest> {
         self.execution_tx.clone()
     }
 
     pub fn update_prepared_orders(&self, match_id: &str, orders: Arc<crate::execution::prepared_orders::PreparedOrders>) {
-        let swap = ArcSwap::from_pointee(orders.as_ref().clone());
-        self.prepared_orders_cache.insert(match_id.to_string(), Arc::new(swap));
+        if let Some(swap) = self.prepared_orders_cache.get(match_id) {
+            // Hot path: update existing atomic pointer
+            swap.store(orders);
+        } else {
+            // Cold path: initialize cache entry
+            self.prepared_orders_cache.insert(match_id.to_string(), Arc::new(ArcSwap::new(orders)));
+        }
     }
 
     pub async fn execute_match(&self, match_id: &str) -> Result<()> {
@@ -115,61 +121,6 @@ impl ExecutionEngine {
         let start_time = Instant::now();
         
         match client.submit_order(&order).await {
-            Ok(_) => {
-                let execution_time = start_time.elapsed().as_millis() as u64;
-                Ok(ExecutionResult {
-                    order_id: order.id,
-                    success: true,
-                    error: None,
-                    execution_time_ms: execution_time,
-                })
-            }
-            Err(e) => {
-                let execution_time = start_time.elapsed().as_millis() as u64;
-                Ok(ExecutionResult {
-                    order_id: order.id,
-                    success: false,
-                    error: Some(e.to_string()),
-                    execution_time_ms: execution_time,
-                })
-            }
-        }
-    }
-}
-
-// Ultra-low latency execution path
-// This is the critical path that must execute in < 1ms
-pub struct UltraFastExecutor {
-    trading_client: Arc<PolymarketClient>,
-}
-
-impl UltraFastExecutor {
-    pub fn new(trading_client: Arc<PolymarketClient>) -> Self {
-        Self { trading_client }
-    }
-
-    // This method performs zero computation - only sends pre-prepared orders
-    pub async fn execute_instant(&self, orders: &crate::execution::prepared_orders::PreparedOrders) -> Result<(ExecutionResult, ExecutionResult)> {
-        let start_time = std::time::Instant::now();
-        
-        // Parallel execution without any additional computation
-        let (goal_result, match_result) = tokio::join!(
-            self.send_prepared_order(&orders.goal_market_order),
-            self.send_prepared_order(&orders.match_result_order)
-        );
-
-        let total_time = start_time.elapsed().as_millis() as u64;
-        
-        info!("Ultra-fast execution completed in {}ms", total_time);
-        
-        Ok((goal_result?, match_result?))
-    }
-
-    async fn send_prepared_order(&self, order: &PreparedOrder) -> Result<ExecutionResult> {
-        let start_time = std::time::Instant::now();
-        
-        // Direct network send - no computation
-        match self.trading_client.submit_prepared_order(&order.payload, order.signature.as_ref()).await {
             Ok(_) => {
                 let execution_time = start_time.elapsed().as_millis() as u64;
                 Ok(ExecutionResult {

@@ -2,7 +2,7 @@ use crate::execution::prepared_orders::PreparedOrder;
 use anyhow::Result;
 use bytes::Bytes;
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, error, info};
 
@@ -58,6 +58,7 @@ impl PolymarketClient {
         }
     }
 
+    #[allow(dead_code)] // This method is part of the full API but not used in the current demo flow
     pub async fn submit_prepared_order(
         &self,
         payload: &Bytes,
@@ -92,6 +93,7 @@ impl PolymarketClient {
         }
     }
 
+    #[allow(dead_code)] // This method is part of the full API but not used in the current demo flow
     pub async fn get_markets(&self) -> Result<Vec<Value>> {
         let url = format!("{}/api/v1/markets", self.base_url);
         
@@ -115,6 +117,7 @@ impl PolymarketClient {
         }
     }
 
+    #[allow(dead_code)] // This method is part of the full API but not used in the current demo flow
     pub async fn get_orderbook(&self, market_id: &str) -> Result<Value> {
         let url = format!("{}/api/v1/markets/{}/orderbook", self.base_url, market_id);
         
@@ -138,6 +141,7 @@ impl PolymarketClient {
         }
     }
 
+    #[allow(dead_code)] // This method is part of the full API but not used in the current demo flow
     pub async fn get_balance(&self) -> Result<Value> {
         let url = format!("{}/api/v1/account/balance", self.base_url);
         
@@ -161,6 +165,7 @@ impl PolymarketClient {
         }
     }
 
+    #[allow(dead_code)] // This method is part of the full API but not used in the current demo flow
     pub async fn cancel_order(&self, order_id: &str) -> Result<Value> {
         let url = format!("{}/api/v1/orders/{}/cancel", self.base_url, order_id);
         

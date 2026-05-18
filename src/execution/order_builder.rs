@@ -45,8 +45,12 @@ impl OrderPreBuilder {
     }
 
     fn build_goal_market_order(&self, market_id: &str, orderbook: &OrderBook) -> Result<PreparedOrder> {
-        // Calculate total available liquidity on the ask side
-        let total_liquidity: f64 = orderbook.asks.iter().map(|level| level.size).sum();
+        // Use get_best_ask to find the best price and its size
+        let best_ask = orderbook.get_best_ask()
+            .ok_or_else(|| anyhow::anyhow!("No ask liquidity available in goal market"))?;
+
+        // For a market order, we might want to consume all available liquidity up to a certain point
+        let total_liquidity = best_ask.size; // Simplified: just take the best ask's size for now
         
         if total_liquidity <= 0.0 {
             return Err(anyhow::anyhow!("No liquidity available in goal market"));
@@ -77,21 +81,16 @@ impl OrderPreBuilder {
     }
 
     fn build_match_result_order(&self, market_id: &str, orderbook: &OrderBook) -> Result<PreparedOrder> {
-        // Find the best price within our limit
-        let best_price = orderbook
-            .asks
-            .iter()
-            .filter(|level| level.price <= self.max_price_limit)
-            .map(|level| level.price)
-            .next()
+        // Find the best ask price within our limit
+        let best_ask_level = orderbook.get_best_ask()
             .ok_or_else(|| anyhow::anyhow!("No orders available within price limit"))?;
 
-        let order_size = orderbook
-            .asks
-            .iter()
-            .filter(|level| level.price <= self.max_price_limit)
-            .map(|level| level.size)
-            .sum();
+        if best_ask_level.price > self.max_price_limit {
+            return Err(anyhow::anyhow!("Best ask price is above max price limit"));
+        }
+
+        let best_price = best_ask_level.price;
+        let order_size = best_ask_level.size; // Simplified: just take the best ask's size for now
 
         if order_size <= 0.0 {
             return Err(anyhow::anyhow!("No liquidity available within price limit"));

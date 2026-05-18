@@ -1,11 +1,10 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use crate::execution::{ExecutionEngine, OrderPreBuilder, PreparedOrders};
 use crate::market_data::{MarketUpdate, OrderBook};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tokio::sync::mpsc;use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct MatchConfig {
@@ -45,7 +44,7 @@ pub struct MatchEngine {
     match_orderbook: Arc<ArcSwap<OrderBook>>,
     order_pre_builder: OrderPreBuilder,
     execution_engine: Arc<ExecutionEngine>,
-    market_update_rx: mpsc::UnboundedReceiver<MarketUpdate>,
+    market_update_rx: Option<mpsc::UnboundedReceiver<MarketUpdate>>,
 }
 
 impl MatchEngine {
@@ -59,7 +58,7 @@ impl MatchEngine {
         Self {
             config: config.clone(),
             prepared_orders: Arc::new(ArcSwap::from_pointee(PreparedOrders::new(
-                "dummy".to_string(),
+                config.id.clone(),
                 Default::default(),
                 Default::default(),
             ))),
@@ -67,7 +66,7 @@ impl MatchEngine {
             match_orderbook: Arc::new(ArcSwap::from_pointee(OrderBook::new(config.clone().match_market_id))),
             order_pre_builder,
             execution_engine,
-            market_update_rx,
+            market_update_rx: Some(market_update_rx),
         }
     }
 
@@ -75,7 +74,7 @@ impl MatchEngine {
         info!("Starting match engine for: {}", self.config.name);
 
         // Start market data handler
-        let goal_market_id = self.config.goal_market_id.clone();
+        let goal_market_id = self.config.goal_market_id.clone(); // Clone for the handler
         let match_market_id = self.config.match_market_id.clone();
         let goal_orderbook = self.goal_orderbook.clone();
         let match_orderbook = self.match_orderbook.clone();
@@ -84,8 +83,17 @@ impl MatchEngine {
         let execution_engine = self.execution_engine.clone();
         let match_id = self.config.id.clone();
 
+        let market_update_rx = self.market_update_rx.take().expect("Market update receiver already taken or not set");
+        
+        // Initialize the execution engine's cache with our starting orders.
+        // This ensures the match is ready to be triggered even before the first market data update arrives,
+        // preventing "No prepared orders available" errors.
+        let initial_orders = self.prepared_orders.load().clone();
+        self.execution_engine.update_prepared_orders(&self.config.id, initial_orders);
+
         tokio::spawn(async move {
             Self::market_data_handler(
+                market_update_rx,
                 goal_market_id,
                 match_market_id,
                 goal_orderbook,
@@ -109,11 +117,13 @@ impl MatchEngine {
         &self.config
     }
 
+    #[allow(dead_code)] // This method is intended for external use (e.g., UI displaying prepared orders) but not used in current demo flow.
     pub fn get_prepared_orders(&self) -> Arc<PreparedOrders> {
         self.prepared_orders.load().clone()
     }
 
     async fn market_data_handler(
+        mut market_update_rx: mpsc::UnboundedReceiver<MarketUpdate>,
         goal_market_id: String,
         match_market_id: String,
         goal_orderbook: Arc<ArcSwap<OrderBook>>,
@@ -124,28 +134,50 @@ impl MatchEngine {
         match_id: String,
     ) {
         info!("Market data handler started for match: {}", match_id);
-
-        // In a real implementation, this would receive market updates
-        // For now, we'll simulate orderbook updates
         
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            
-            // Simulate orderbook updates and rebuild prepared orders
-            // This would be replaced with actual market data processing
-            
-            debug!("Updating prepared orders for match: {}", match_id);
-            
-            // Update execution engine cache
-            let current_orders = prepared_orders.load();
-            execution_engine.update_prepared_orders(&match_id, Arc::new(current_orders.as_ref().clone()));
+        while let Some(update) = market_update_rx.recv().await {
+            debug!("Received market update for market: {}", update.market_id);
+
+            match update.update_type {
+                crate::market_data::MarketUpdateType::OrderBookUpdate(ob_update) => {
+                    if ob_update.market_id == goal_market_id {
+                        goal_orderbook.store(Arc::new(ob_update));
+                        debug!("Goal orderbook updated for match: {}", match_id);
+                    } else if ob_update.market_id == match_market_id {
+                        match_orderbook.store(Arc::new(ob_update));
+                        debug!("Match orderbook updated for match: {}", match_id);
+                    } else {
+                        warn!("Received orderbook update for unknown market_id: {}", ob_update.market_id);
+                        continue;
+                    }
+
+                    // After updating an orderbook, rebuild prepared orders
+                    let current_goal_ob = goal_orderbook.load();
+                    let current_match_ob = match_orderbook.load();
+
+                    if let Err(e) = order_pre_builder.update_orders_on_market_data(
+                        &match_id, &goal_market_id, &match_market_id, &current_goal_ob, &current_match_ob, &prepared_orders,
+                    ) {
+                        error!("Failed to rebuild prepared orders for match {}: {}", match_id, e);
+                    } else {
+                        // Update execution engine cache with the newly prepared orders
+                        let new_prepared_orders = prepared_orders.load();
+                        execution_engine.update_prepared_orders(&match_id, new_prepared_orders.clone());
+                    }
+                },
+                _ => {
+                    debug!("Unhandled market update type for market: {}", update.market_id);
+                }
+            }
         }
+        info!("Market data handler stopped for match: {}", match_id);
     }
 }
 
 #[derive(Debug)]
 pub struct MatchManager {
     matches: DashMap<String, Arc<MatchEngine>>,
+    market_data_senders: DashMap<String, mpsc::UnboundedSender<MarketUpdate>>,
     execution_engine: Arc<ExecutionEngine>,
 }
 
@@ -153,18 +185,26 @@ impl MatchManager {
     pub fn new(execution_engine: Arc<ExecutionEngine>) -> Self {
         Self {
             matches: DashMap::new(),
+            market_data_senders: DashMap::new(),
             execution_engine,
         }
     }
 
-    pub fn add_match(&self, config: MatchConfig) -> Result<()> {
-        let (_market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
+    pub async fn add_match(&self, config: MatchConfig) -> Result<()> {
+        let (market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
         
-        let engine = MatchEngine::new(
+        // Store the sender for this match
+        self.market_data_senders.insert(config.id.clone(), market_update_tx);
+
+        // Create the MatchEngine
+        
+        let mut engine = MatchEngine::new(
             config.clone(),
             self.execution_engine.clone(),
             market_update_rx,
         );
+
+        engine.start().await?;
 
         let engine_arc = Arc::new(engine);
         self.matches.insert(config.id.clone(), engine_arc);
@@ -175,6 +215,11 @@ impl MatchManager {
 
     pub fn get_match(&self, match_id: &str) -> Option<Arc<MatchEngine>> {
         self.matches.get(match_id).map(|entry| entry.clone())
+    }
+
+    #[allow(dead_code)] // Used in examples/demo.rs, but not directly in lib.rs or main.rs
+    pub fn get_market_data_sender(&self, match_id: &str) -> Option<mpsc::UnboundedSender<MarketUpdate>> {
+        self.market_data_senders.get(match_id).map(|entry| entry.clone())
     }
 
     pub fn get_all_matches(&self) -> Vec<Arc<MatchEngine>> {
@@ -192,19 +237,8 @@ impl MatchManager {
     pub async fn start_all(&self) -> Result<()> {
         info!("Starting all match engines");
 
-        let handles: Vec<_> = self.matches
-            .iter()
-            .map(|entry| {
-                let engine = entry.value().clone();
-                tokio::spawn(async move {
-                    // Note: We can't call start() on Arc<MatchEngine> directly
-                    // In a real implementation, we'd handle this differently
-                    info!("Match engine would start for: {}", engine.get_config().name);
-                })
-            })
-            .collect();
-
-        futures::future::join_all(handles).await;
+        // Engines are now started automatically in add_match
+        info!("All {} match engines are active", self.matches.len());
         Ok(())
     }
 }

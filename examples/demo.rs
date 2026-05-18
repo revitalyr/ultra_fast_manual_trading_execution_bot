@@ -13,7 +13,6 @@ use ultra_fast_manual_trading_execution_bot::trading::PolymarketClient;
 pub struct TradingBotDemo {
     execution_engine: Arc<ExecutionEngine>,
     match_manager: Arc<MatchManager>,
-    market_data_rx: mpsc::UnboundedReceiver<MarketUpdate>,
 }
 
 impl TradingBotDemo {
@@ -32,15 +31,11 @@ impl TradingBotDemo {
         // Setup match manager
         let match_manager = Arc::new(MatchManager::new(execution_engine.clone()));
         
-        // Setup market data receiver
-        let (_market_data_tx, market_data_rx) = mpsc::unbounded_channel();
-        
         println!("✅ Core components initialized");
         
         Ok(Self {
             execution_engine,
             match_manager,
-            market_data_rx,
         })
     }
     
@@ -90,26 +85,36 @@ impl TradingBotDemo {
     pub async fn simulate_market_data(&self) -> Result<()> {
         println!("📊 Simulating real-time market data...");
         
-        let matches = vec![
-            ("arsenal_chelsea", "goal_arsenal_chelsea"),
-            ("real_madrid_barcelona", "goal_real_barcelona"),
-            ("psg_marseille", "goal_psg_marseille"),
-        ];
+        let configured_matches = self.match_manager.get_all_matches();
         
         // Simulate market data updates
         for _ in 0..10 {
-            for (match_id, market_id) in &matches {
-                let mut orderbook = OrderBook::new(market_id.to_string());
+            for engine in &configured_matches {
+                let config = engine.get_config();
+                let match_id = &config.id;
+                let goal_market_id = &config.goal_market_id;
+                let match_market_id = &config.match_market_id;
                 
-                // Simulate realistic bid/ask prices
-                let base_price = fastrand::f64() * 0.5 + 0.4; // 0.4-0.9
+                // Simulate updates for goal market
+                let mut goal_orderbook = OrderBook::new(goal_market_id.to_string());
+                let goal_base_price = fastrand::f64() * 0.5 + 0.4; // 0.4-0.9
+                goal_orderbook.update_bid(goal_base_price - 0.001, 1500.0);
+                goal_orderbook.update_ask(goal_base_price + 0.001, 1250.0);
                 
-                // Note: OrderBook doesn't have update_bid/update_ask methods in current implementation
-                // This would need to be implemented based on actual OrderBook API
+                // Simulate updates for match market
+                let mut match_orderbook = OrderBook::new(match_market_id.to_string());
+                let match_base_price = fastrand::f64() * 0.5 + 0.4; // 0.4-0.9
+                match_orderbook.update_bid(match_base_price - 0.001, 1000.0);
+                match_orderbook.update_ask(match_base_price + 0.001, 800.0);
                 
-                let market_update = MarketUpdate {
-                    market_id: market_id.to_string(),
-                    update_type: MarketUpdateType::OrderBookUpdate(orderbook),
+                // Send updates to the match engine
+                let sender = self.match_manager.get_market_data_sender(match_id)
+                    .ok_or_else(|| anyhow::anyhow!("No market data sender for match {}", match_id))?;
+                
+                // Send goal market update
+                let goal_update = MarketUpdate {
+                    market_id: goal_market_id.to_string(),
+                    update_type: MarketUpdateType::OrderBookUpdate(goal_orderbook),
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
@@ -117,7 +122,18 @@ impl TradingBotDemo {
                 };
                 
                 // In real implementation, this would be sent to match engine
-                info!("Market update for {}: price={:.3}", market_id, base_price);
+                sender.send(goal_update)?;
+                info!("Market update for {}: goal_price={:.3}", goal_market_id, goal_base_price);
+
+                // Send match market update
+                let match_update = MarketUpdate {
+                    market_id: match_market_id.to_string(),
+                    update_type: MarketUpdateType::OrderBookUpdate(match_orderbook),
+                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
+                };
+                sender.send(match_update)?;
+                info!("Market update for {}: match_price={:.3}", match_market_id, match_base_price);
+
             }
             
             tokio::time::sleep(Duration::from_millis(100)).await;

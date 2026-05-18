@@ -1,4 +1,4 @@
-use crate::match_engine::{MatchEngine, MatchManager};
+use crate::match_engine::MatchManager;
 use anyhow::Result;
 use crossterm::{
     event::{self, KeyCode, KeyEvent},
@@ -7,32 +7,31 @@ use crossterm::{
 };
 use std::io::{stdout, Write};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{error, info};
 
 pub struct KeyboardDashboard {
     match_manager: Arc<MatchManager>,
-    last_update: Instant,
+    current_feedback: Option<String>,
 }
 
 impl KeyboardDashboard {
     pub fn new(match_manager: Arc<MatchManager>) -> Self {
         Self {
             match_manager,
-            last_update: Instant::now(),
+            current_feedback: None,
         }
     }
 
+    // Main loop for the dashboard
     pub async fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
         execute!(stdout(), Clear(ClearType::All), crossterm::cursor::Hide)?;
 
         info!("Keyboard dashboard started");
+        self.render()?; // Initial render
 
         loop {
-            // Update display
-            self.render()?;
-
             // Handle keyboard input
             if event::poll(Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
@@ -47,12 +46,6 @@ impl KeyboardDashboard {
                         }
                     }
                 }
-            }
-
-            // Update display periodically
-            if self.last_update.elapsed() > Duration::from_millis(100) {
-                self.render()?;
-                self.last_update = Instant::now();
             }
         }
 
@@ -107,7 +100,11 @@ impl KeyboardDashboard {
         }
 
         println!();
-        println!("Status: Ready | Latency: < 2ms execution time");
+        if let Some(feedback_msg) = &self.current_feedback {
+            println!("Status: {}", feedback_msg);
+        } else {
+            println!("Status: Ready | Latency: < 2ms execution time");
+        }
 
         stdout.flush()?;
         Ok(())
@@ -147,41 +144,24 @@ impl KeyboardDashboard {
         }
     }
 
-    async fn execute_match(&self, match_id: &str) -> Result<()> {
+    async fn execute_match(&mut self, match_id: &str) -> Result<()> {
         info!("Executing match via keyboard: {}", match_id);
         
         let start_time = std::time::Instant::now();
         
         match self.match_manager.execute_match(match_id).await {
             Ok(_) => {
-                let execution_time = start_time.elapsed().as_millis();
-                self.show_execution_feedback(match_id, true, execution_time)?;
+                let execution_time_ms = start_time.elapsed().as_millis();
+                self.set_feedback(format!("✅ SUCCESS! Match: {} | Time: {}ms", match_id, execution_time_ms)); // Use execution_time_ms
             }
             Err(e) => {
-                let execution_time = start_time.elapsed().as_millis();
+                let _execution_time_ms = start_time.elapsed().as_millis(); // Keep for potential future use, or remove if truly not needed
                 error!("Match execution failed: {}", e);
-                self.show_execution_feedback(match_id, false, execution_time)?;
+                self.set_feedback(format!("❌ FAILED! Match: {} | Error: {}", match_id, e));
             }
         }
         
-        Ok(())
-    }
-
-    fn show_execution_feedback(&self, match_id: &str, success: bool, execution_time_ms: u128) -> anyhow::Result<()> {
-        let mut stdout = stdout();
-        
-        // Move to bottom of screen for feedback
-        execute!(stdout, crossterm::cursor::MoveTo(0, 20))?;
-        
-        if success {
-            println!("✅ EXECUTION SUCCESSFUL! Match: {} | Time: {}ms", match_id, execution_time_ms);
-        } else {
-            println!("❌ EXECUTION FAILED! Match: {} | Time: {}ms", match_id, execution_time_ms);
-        }
-        
-        // Wait a moment then clear feedback
-        stdout.flush()?;
-        std::thread::sleep(Duration::from_millis(1000));
+        self.render()?; // Immediately render to show the feedback
         
         Ok(())
     }
@@ -196,6 +176,10 @@ impl KeyboardDashboard {
         )?;
         disable_raw_mode()?;
         Ok(())
+    }
+
+    fn set_feedback(&mut self, message: String) {
+        self.current_feedback = Some(message);
     }
 }
 
