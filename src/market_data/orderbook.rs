@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceLevel {
@@ -9,17 +10,52 @@ pub struct PriceLevel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderBook {
     pub market_id: String,
-    pub bids: Vec<PriceLevel>,
-    pub asks: Vec<PriceLevel>,
+    pub bids: BTreeMap<OrderedFloat, f64>, // price -> size, sorted descending for bids
+    pub asks: BTreeMap<OrderedFloat, f64>, // price -> size, sorted ascending for asks
     pub updated_at: u64,
+}
+
+/// Wrapper for f64 to enable BTreeMap ordering with correct IEEE 754 total ordering.
+/// Uses bit manipulation to ensure NaN handling and correct ordering for negative values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OrderedFloat(u64);
+
+impl OrderedFloat {
+    /// Converts f64 to ordered bits. Handles:
+    /// - Negative floats: flips sign bit so -inf < ... < -0 < +0 < ... < +inf
+    /// - NaN: all NaNs sort at the end (greater than any number)
+    fn new(value: f64) -> Self {
+        let bits = value.to_bits();
+        // Flip sign bit for correct ordering: negative values become larger unsigned
+        // This makes -inf (0xFFF...) the largest, +inf (0x7FF...) the smallest positive
+        OrderedFloat(if bits & 0x8000_0000_0000_0000 != 0 {
+            !bits // Negative: invert all bits
+        } else {
+            bits | 0x8000_0000_0000_0000 // Positive: set sign bit
+        })
+    }
+}
+
+impl From<OrderedFloat> for f64 {
+    fn from(ordered: OrderedFloat) -> Self {
+        let bits = ordered.0;
+        // Reverse the transformation
+        let original_bits = if bits & 0x8000_0000_0000_0000 != 0 {
+            bits & 0x7FFF_FFFF_FFFF_FFFF // Positive: clear sign bit
+        } else {
+            !bits // Negative: invert all bits back
+        };
+        f64::from_bits(original_bits)
+    }
 }
 
 impl OrderBook {
     pub fn new(market_id: String) -> Self {
         Self {
             market_id,
-            bids: Vec::with_capacity(20),
-            asks: Vec::with_capacity(20),
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
             updated_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -28,33 +64,27 @@ impl OrderBook {
     }
 
     /// Обновляет уровень Bid. Если размер 0 — удаляет уровень.
-    /// Bids всегда отсортированы по убыванию цены.
+    /// Bids отсортированы по убыванию цены (OrderedFloat обеспечивает правильный порядок).
+    /// O(log n) операция.
     pub fn update_bid(&mut self, price: f64, size: f64) {
-        if let Some(pos) = self.bids.iter().position(|level| (level.price - price).abs() < f64::EPSILON) {
-            if size <= 0.0 {
-                self.bids.remove(pos);
-            } else {
-                self.bids[pos].size = size;
-            }
-        } else if size > 0.0 {
-            self.bids.push(PriceLevel { price, size });
-            self.bids.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap_or(std::cmp::Ordering::Equal));
+        let key = OrderedFloat::new(price);
+        if size <= 0.0 {
+            self.bids.remove(&key);
+        } else {
+            self.bids.insert(key, size);
         }
         self.touch();
     }
 
     /// Обновляет уровень Ask. Если размер 0 — удаляет уровень.
-    /// Asks всегда отсортированы по возрастанию цены.
+    /// Asks отсортированы по возрастанию цены.
+    /// O(log n) операция.
     pub fn update_ask(&mut self, price: f64, size: f64) {
-        if let Some(pos) = self.asks.iter().position(|level| (level.price - price).abs() < f64::EPSILON) {
-            if size <= 0.0 {
-                self.asks.remove(pos);
-            } else {
-                self.asks[pos].size = size;
-            }
-        } else if size > 0.0 {
-            self.asks.push(PriceLevel { price, size });
-            self.asks.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap_or(std::cmp::Ordering::Equal));
+        let key = OrderedFloat::new(price);
+        if size <= 0.0 {
+            self.asks.remove(&key);
+        } else {
+            self.asks.insert(key, size);
         }
         self.touch();
     }
@@ -67,13 +97,23 @@ impl OrderBook {
     }
 
     #[allow(dead_code)] // Used by OrderPreBuilder
-    pub fn get_best_bid(&self) -> Option<&PriceLevel> {
-        self.bids.first()
+    pub fn get_best_bid(&self) -> Option<PriceLevel> {
+        self.bids
+            .first_key_value()
+            .map(|(key, &size)| PriceLevel {
+                price: (*key).into(),
+                size,
+            })
     }
 
     #[allow(dead_code)] // Used by OrderPreBuilder
-    pub fn get_best_ask(&self) -> Option<&PriceLevel> {
-        self.asks.first()
+    pub fn get_best_ask(&self) -> Option<PriceLevel> {
+        self.asks
+            .first_key_value()
+            .map(|(key, &size)| PriceLevel {
+                price: (*key).into(),
+                size,
+            })
     }
 
     #[allow(dead_code)] // Not used in current demo, but useful for analysis
@@ -83,6 +123,30 @@ impl OrderBook {
         } else {
             None
         }
+    }
+
+    /// Convert BTreeMap to Vec<PriceLevel> for serialization/external use
+    #[allow(dead_code)]
+    pub fn bids_as_vec(&self) -> Vec<PriceLevel> {
+        self.bids
+            .iter()
+            .map(|(key, &size)| PriceLevel {
+                price: (*key).into(),
+                size,
+            })
+            .collect()
+    }
+
+    /// Convert BTreeMap to Vec<PriceLevel> for serialization/external use
+    #[allow(dead_code)]
+    pub fn asks_as_vec(&self) -> Vec<PriceLevel> {
+        self.asks
+            .iter()
+            .map(|(key, &size)| PriceLevel {
+                price: (*key).into(),
+                size,
+            })
+            .collect()
     }
 }
 
