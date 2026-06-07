@@ -52,6 +52,7 @@ pub mod execution;
 pub mod market_data;
 pub mod match_engine;
 pub mod trading;
+pub mod traits;
 pub mod ui;
 
 // Re-export commonly used types
@@ -59,4 +60,5 @@ pub use execution::{ExecutionEngine, PreparedOrder, PreparedOrders, ExecutionReq
 pub use market_data::{OrderBook, MarketUpdate, OrderSide, OrderType};
 pub use match_engine::{MatchEngine, MatchManager, MatchConfig};
 pub use trading::PolymarketClient;
+pub use traits::{ExecutionEngine as ExecutionEngineTrait, TradingClient};
 pub use ui::KeyboardDashboard;

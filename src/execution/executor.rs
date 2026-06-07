@@ -1,4 +1,5 @@
 use crate::execution::prepared_orders::{ExecutionRequest, ExecutionResult, PreparedOrder, PreparedOrders};
+use crate::traits::ExecutionEngine as ExecutionEngineTrait;
 use crate::trading::polymarket_client::PolymarketClient;
 use anyhow::Result;
 use arc_swap::ArcSwap;
@@ -140,5 +141,20 @@ impl ExecutionEngine {
                 })
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl ExecutionEngineTrait for ExecutionEngine {
+    fn update_prepared_orders(&self, match_id: &str, orders: Arc<PreparedOrders>) {
+        self.update_prepared_orders(match_id, orders)
+    }
+
+    async fn execute_match(&self, match_id: &str) -> Result<()> {
+        self.execute_match(match_id).await
+    }
+
+    fn get_execution_sender(&self) -> mpsc::UnboundedSender<ExecutionRequest> {
+        self.get_execution_sender()
     }
 }

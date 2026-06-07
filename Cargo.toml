@@ -52,6 +52,7 @@ bytes = { version = "1.7", features = ["serde"] }
 hex = "0.4"
 futures = "0.3"
 fastrand = "2.1"
+async-trait = "0.1"
 
 # Optional web UI
 # axum = "0.8"

@@ -4,6 +4,7 @@ mod trading;
 mod match_engine;
 mod ui;
 mod config;
+mod traits;
 
 use anyhow::Result;
 use std::sync::Arc;
