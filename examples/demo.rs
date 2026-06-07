@@ -84,62 +84,8 @@ impl TradingBotDemo {
     
     pub async fn simulate_market_data(&self) -> Result<()> {
         println!("📊 Simulating real-time market data...");
-        
-        let configured_matches = self.match_manager.get_all_matches();
-        
-        // Simulate market data updates
-        for _ in 0..10 {
-            for engine in &configured_matches {
-                let config = engine.get_config();
-                let match_id = &config.id;
-                let goal_market_id = &config.goal_market_id;
-                let match_market_id = &config.match_market_id;
-                
-                // Simulate updates for goal market
-                let mut goal_orderbook = OrderBook::new(goal_market_id.to_string());
-                let goal_base_price = fastrand::f64() * 0.5 + 0.4; // 0.4-0.9
-                goal_orderbook.update_bid(goal_base_price - 0.001, 1500.0);
-                goal_orderbook.update_ask(goal_base_price + 0.001, 1250.0);
-                
-                // Simulate updates for match market
-                let mut match_orderbook = OrderBook::new(match_market_id.to_string());
-                let match_base_price = fastrand::f64() * 0.5 + 0.4; // 0.4-0.9
-                match_orderbook.update_bid(match_base_price - 0.001, 1000.0);
-                match_orderbook.update_ask(match_base_price + 0.001, 800.0);
-                
-                // Send updates to the match engine
-                let sender = self.match_manager.get_market_data_sender(match_id)
-                    .ok_or_else(|| anyhow::anyhow!("No market data sender for match {}", match_id))?;
-                
-                // Send goal market update
-                let goal_update = MarketUpdate {
-                    market_id: goal_market_id.to_string(),
-                    update_type: MarketUpdateType::OrderBookUpdate(goal_orderbook),
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64,
-                };
-                
-                // In real implementation, this would be sent to match engine
-                sender.send(goal_update)?;
-                info!("Market update for {}: goal_price={:.3}", goal_market_id, goal_base_price);
-
-                // Send match market update
-                let match_update = MarketUpdate {
-                    market_id: match_market_id.to_string(),
-                    update_type: MarketUpdateType::OrderBookUpdate(match_orderbook),
-                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
-                };
-                sender.send(match_update)?;
-                info!("Market update for {}: match_price={:.3}", match_market_id, match_base_price);
-
-            }
-            
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        
-        println!("✅ Market data simulation completed");
+        println!("⚠️  Note: Market data simulation is disabled - market data channels are not exposed in production flow");
+        println!("✅ Market data simulation skipped");
         
         Ok(())
     }

@@ -20,22 +20,9 @@ The Ultra Fast Manual Trading Execution Bot is built with a 3-layer architecture
 ## Layer 1: Market Data Layer
 
 ### Purpose
-Real-time data ingestion and processing from Polymarket WebSocket feeds.
+Order book data structures and market update types for processing market data.
 
 ### Components
-
-#### MarketDataListener
-- **WebSocket connections** to Polymarket real-time feeds
-- **Message parsing** and validation
-- **Data distribution** to other layers via channels
-- **Connection management** with automatic reconnection
-
-```rust
-pub struct MarketDataListener {
-    websocket_url: String,
-    update_tx: mpsc::UnboundedSender<MarketUpdate>,
-}
-```
 
 #### OrderBook
 - **Lock-free orderbook** representation
@@ -66,10 +53,8 @@ pub enum MarketUpdateType {
 ```
 
 ### Performance Optimizations
-- **Zero-copy message parsing** where possible
 - **Lock-free data structures** for concurrent access
 - **Batch processing** of market updates
-- **Connection pooling** for WebSocket streams
 
 ## Layer 2: Order Preparation Layer
 
@@ -225,7 +210,7 @@ pub struct MatchManager {
 
 ```
 1. Market Data Ingestion
-   WebSocket → MarketDataListener → MarketUpdate
+   External Source → MarketUpdate (via channels)
 
 2. Order Preparation
    MarketUpdate → OrderPreBuilder → PreparedOrders → ArcSwap
@@ -276,7 +261,6 @@ Network Dispatch (<1ms) → Total (<2ms)
 ## Concurrency Model
 
 ### Actor Pattern
-- **MarketDataListener**: Data ingestion actor
 - **OrderPreBuilder**: Order preparation actor  
 - **ExecutionEngine**: Order execution actor
 - **MatchEngine**: Coordination actor

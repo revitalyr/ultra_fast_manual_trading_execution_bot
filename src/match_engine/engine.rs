@@ -177,7 +177,6 @@ impl MatchEngine {
 #[derive(Debug)]
 pub struct MatchManager {
     matches: DashMap<String, Arc<MatchEngine>>,
-    market_data_senders: DashMap<String, mpsc::UnboundedSender<MarketUpdate>>,
     execution_engine: Arc<ExecutionEngine>,
 }
 
@@ -185,19 +184,14 @@ impl MatchManager {
     pub fn new(execution_engine: Arc<ExecutionEngine>) -> Self {
         Self {
             matches: DashMap::new(),
-            market_data_senders: DashMap::new(),
             execution_engine,
         }
     }
 
     pub async fn add_match(&self, config: MatchConfig) -> Result<()> {
-        let (market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
-        
-        // Store the sender for this match
-        self.market_data_senders.insert(config.id.clone(), market_update_tx);
+        let (_market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
 
         // Create the MatchEngine
-        
         let mut engine = MatchEngine::new(
             config.clone(),
             self.execution_engine.clone(),
@@ -217,10 +211,6 @@ impl MatchManager {
         self.matches.get(match_id).map(|entry| entry.clone())
     }
 
-    #[allow(dead_code)] // Used in examples/demo.rs, but not directly in lib.rs or main.rs
-    pub fn get_market_data_sender(&self, match_id: &str) -> Option<mpsc::UnboundedSender<MarketUpdate>> {
-        self.market_data_senders.get(match_id).map(|entry| entry.clone())
-    }
 
     pub fn get_all_matches(&self) -> Vec<Arc<MatchEngine>> {
         self.matches.iter().map(|entry| entry.clone()).collect()
