@@ -3,6 +3,7 @@ mod execution;
 mod trading;
 mod match_engine;
 mod ui;
+mod config;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -11,8 +12,9 @@ use tracing_subscriber;
 
 use execution::ExecutionEngine;
 use trading::PolymarketClient;
-use match_engine::{MatchConfig, MatchManager};
+use match_engine::MatchManager;
 use ui::KeyboardDashboard;
+use config::Config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,8 +40,18 @@ async fn main() -> Result<()> {
     // Initialize match manager
     let match_manager = Arc::new(MatchManager::new(execution_engine.clone()));
 
-    // Configure matches (these would come from config file in production)
-    configure_matches(&match_manager).await?;
+    // Load match configuration from file
+    let config = Config::from_default_path()
+        .unwrap_or_else(|e| {
+            info!("Failed to load config file: {}. Using fallback configuration.", e);
+            Config::from_file("config.example.toml").unwrap_or_else(|_| {
+                info!("No config file found. Creating default configuration.");
+                create_default_config()
+            })
+        });
+
+    // Configure matches from config
+    configure_matches_from_config(&match_manager, &config).await?;
 
     // Start all match engines
     match_manager.start_all().await?;
@@ -60,42 +72,48 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn configure_matches(match_manager: &Arc<MatchManager>) -> Result<()> {
-    // Example matches - in production these would be loaded from config
-    let matches = vec![
-        MatchConfig::new(
-            "match_1".to_string(),
-            "Arsenal vs Chelsea".to_string(),
-            "goal_market_arsenal_chelsea".to_string(),
-            "match_result_arsenal_chelsea".to_string(),
-            0.95, // Max price limit
-            Some('1'), // Keyboard shortcut
-        ),
-        MatchConfig::new(
-            "match_2".to_string(),
-            "Real Madrid vs Barcelona".to_string(),
-            "goal_market_real_barcelona".to_string(),
-            "match_result_real_barcelona".to_string(),
-            0.95,
-            Some('2'),
-        ),
-        MatchConfig::new(
-            "match_3".to_string(),
-            "PSG vs Marseille".to_string(),
-            "goal_market_psg_marseille".to_string(),
-            "match_result_psg_marseille".to_string(),
-            0.95,
-            Some('3'),
-        ),
-    ];
-
-    for match_config in matches {
+async fn configure_matches_from_config(match_manager: &Arc<MatchManager>, config: &Config) -> Result<()> {
+    let match_configs = config.get_match_configs();
+    
+    for match_config in match_configs {
+        let match_name = match_config.name.clone();
         match_manager.add_match(match_config).await?;
-        info!("Match configured successfully");
+        info!("Match configured: {}", match_name);
     }
 
     info!("All matches configured successfully");
     Ok(())
+}
+
+fn create_default_config() -> Config {
+    Config {
+        matches: vec![
+            config::MatchConfig {
+                id: "match_1".to_string(),
+                name: "Arsenal vs Chelsea".to_string(),
+                goal_market_id: "goal_market_arsenal_chelsea".to_string(),
+                match_market_id: "match_result_arsenal_chelsea".to_string(),
+                max_price_limit: 0.95,
+                keyboard_shortcut: Some('1'),
+            },
+            config::MatchConfig {
+                id: "match_2".to_string(),
+                name: "Real Madrid vs Barcelona".to_string(),
+                goal_market_id: "goal_market_real_barcelona".to_string(),
+                match_market_id: "match_result_real_barcelona".to_string(),
+                max_price_limit: 0.95,
+                keyboard_shortcut: Some('2'),
+            },
+            config::MatchConfig {
+                id: "match_3".to_string(),
+                name: "PSG vs Marseille".to_string(),
+                goal_market_id: "goal_market_psg_marseille".to_string(),
+                match_market_id: "match_result_psg_marseille".to_string(),
+                max_price_limit: 0.95,
+                keyboard_shortcut: Some('3'),
+            },
+        ],
+    }
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@
 //! }
 //! ```
 
+pub mod config;
 pub mod execution;
 pub mod market_data;
 pub mod match_engine;

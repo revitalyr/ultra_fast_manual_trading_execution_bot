@@ -1,0 +1,26 @@
+# Ultra Fast Manual Trading Execution Bot Configuration
+# Copy this file to config.toml and customize for your needs
+
+[[matches]]
+id = "match_1"
+name = "Arsenal vs Chelsea"
+goal_market_id = "goal_market_arsenal_chelsea"
+match_market_id = "match_result_arsenal_chelsea"
+max_price_limit = 0.95
+keyboard_shortcut = '1'
+
+[[matches]]
+id = "match_2"
+name = "Real Madrid vs Barcelona"
+goal_market_id = "goal_market_real_barcelona"
+match_market_id = "match_result_real_barcelona"
+max_price_limit = 0.95
+keyboard_shortcut = '2'
+
+[[matches]]
+id = "match_3"
+name = "PSG vs Marseille"
+goal_market_id = "goal_market_psg_marseille"
+match_market_id = "match_result_psg_marseille"
+max_price_limit = 0.95
+keyboard_shortcut = '3'
