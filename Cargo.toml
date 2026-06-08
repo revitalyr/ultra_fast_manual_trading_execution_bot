@@ -14,11 +14,11 @@ name = "ultra_fast_manual_trading_execution_bot"
 path = "src/main.rs"
 
 [dependencies]
-# Async runtime
-tokio = { version = "1.40", features = ["full", "rt-multi-thread"] }
+# Async runtime (minimal features)
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 
 # HTTP client with connection pooling
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json"] }
 
 # WebSocket support
 tokio-tungstenite = "0.24"
@@ -31,9 +31,6 @@ toml = "0.8"
 # Lock-free data structures for ultra-low latency
 arc-swap = "1.7"
 dashmap = "6.1"
-
-# Concurrency utilities
-crossbeam = "0.8"
 
 # Terminal UI for keyboard shortcuts
 crossterm = "0.28"
@@ -48,10 +45,9 @@ tracing-subscriber = "0.3"
 
 # Utilities
 uuid = { version = "1.11", features = ["v4", "serde"] }
-bytes = { version = "1.7", features = ["serde"] }
+bytes = "1.7"
 hex = "0.4"
 futures = "0.3"
-fastrand = "2.1"
 async-trait = "0.1"
 
 # Secrets management

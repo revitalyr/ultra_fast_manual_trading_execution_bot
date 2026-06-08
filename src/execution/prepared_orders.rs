@@ -5,7 +5,7 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PreparedOrder {
     pub id: Uuid,
     pub market_id: String,

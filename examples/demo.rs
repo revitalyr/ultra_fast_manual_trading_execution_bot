@@ -168,8 +168,7 @@ impl TradingBotDemo {
         let matches = vec!["arsenal_chelsea", "real_madrid_barcelona", "psg_marseille"];
         let handles: Vec<_> = matches
             .into_iter()
-            .enumerate()
-            .map(|(_i, match_id)| {
+            .map(|match_id| {
                 let execution_engine = self.execution_engine.clone();
 
                 tokio::spawn(async move {
