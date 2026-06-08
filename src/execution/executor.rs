@@ -545,6 +545,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_prepared_orders_concurrent_insert() {
+        let engine = Arc::new(make_engine());
+        let mut handles = Vec::new();
+        let task_count = 50;
+
+        for i in 0..task_count {
+            let eng = engine.clone();
+            handles.push(tokio::spawn(async move {
+                let market = format!("concurrent_mkt_{}", i % 5);
+                let orders = make_orders(&market);
+                eng.update_prepared_orders(&market, orders);
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Exactly 5 distinct keys should exist (i%5 → 0..4)
+        assert_eq!(engine.prepared_orders_cache.len(), 5);
+        // Every entry should be valid
+        for entry in engine.prepared_orders_cache.iter() {
+            assert!(entry.value().load().updated_at > 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_prepared_orders_concurrent_update() {
+        let engine = Arc::new(make_engine());
+
+        // Pre-insert 3 matches
+        for m in &["a", "b", "c"] {
+            engine.update_prepared_orders(m, make_orders(m));
+        }
+
+        let mut handles = Vec::new();
+        let task_count = 50;
+
+        for i in 0..task_count {
+            let eng = engine.clone();
+            let market = match i % 3 {
+                0 => "a",
+                1 => "b",
+                _ => "c",
+            };
+            handles.push(tokio::spawn(async move {
+                let orders = make_orders(market);
+                eng.update_prepared_orders(market, orders);
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Still exactly 3 entries, all valid
+        assert_eq!(engine.prepared_orders_cache.len(), 3);
+        for entry in engine.prepared_orders_cache.iter() {
+            assert!(entry.value().load().updated_at > 0);
+        }
+    }
+
+    #[tokio::test]
     async fn test_execution_handler_both_fail() {
         use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
