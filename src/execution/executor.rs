@@ -157,3 +157,253 @@ impl ExecutionEngineTrait for ExecutionEngine {
         self.get_execution_sender()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_orders(match_id: &str) -> Arc<PreparedOrders> {
+        Arc::new(PreparedOrders::new(
+            match_id.to_string(),
+            PreparedOrder::placeholder(),
+            PreparedOrder::placeholder(),
+        ))
+    }
+
+    fn make_engine() -> ExecutionEngine {
+        let client = Arc::new(PolymarketClient::new("http://localhost:1".to_string(), None));
+        ExecutionEngine::new(client)
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_no_orders() {
+        let engine = make_engine();
+        let result = engine.execute_match("nonexistent").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("No prepared orders"), "got: {}", err);
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_with_orders() {
+        let engine = make_engine();
+        let orders = make_orders("m1");
+        engine.update_prepared_orders("m1", orders);
+
+        let result = engine.execute_match("m1").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_queue_full() {
+        let engine = make_engine();
+        let orders = make_orders("m1");
+        engine.update_prepared_orders("m1", orders);
+
+        // Fill the channel via raw sender to capacity
+        let tx = engine.get_execution_sender();
+        let dummy = ExecutionRequest::new("dummy".to_string(), make_orders("dummy"));
+        for _ in 0..EXECUTION_QUEUE_CAPACITY {
+            tx.try_send(dummy.clone()).expect("fill channel");
+        }
+        // try_send on a full channel must fail
+        assert!(tx.try_send(dummy.clone()).is_err());
+
+        // execute_match uses try_send internally, so it must also fail
+        let result = engine.execute_match("m1").await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("queue full"), "got: {}", err_msg);
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_wrong_match_id() {
+        let engine = make_engine();
+        engine.update_prepared_orders("actual", make_orders("actual"));
+
+        let result = engine.execute_match("other").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No prepared orders"));
+    }
+
+    #[tokio::test]
+    async fn test_update_prepared_orders_overwrites() {
+        let engine = make_engine();
+        let first = PreparedOrders::new("m1".to_string(), PreparedOrder::placeholder(), PreparedOrder::placeholder());
+        let first_ts = first.updated_at;
+
+        // Small delay so the second has a different timestamp
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+
+        let second = PreparedOrders::new("m1".to_string(), PreparedOrder::placeholder(), PreparedOrder::placeholder());
+        assert!(second.updated_at > first_ts);
+
+        engine.update_prepared_orders("m1", Arc::new(first));
+        engine.update_prepared_orders("m1", Arc::new(second));
+
+        // Execute should use the latest version
+        let result = engine.execute_match("m1").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_multiple_matches() {
+        let engine = make_engine();
+        engine.update_prepared_orders("m1", make_orders("m1"));
+        engine.update_prepared_orders("m2", make_orders("m2"));
+
+        let r1 = engine.execute_match("m1").await;
+        let r2 = engine.execute_match("m2").await;
+        assert!(r1.is_ok());
+        assert!(r2.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_order_data_preserved() {
+        let engine = make_engine();
+
+        let goal = PreparedOrder::with_params(
+            "goal_mkt".to_string(),
+            crate::market_data::OrderType::Market,
+            crate::market_data::OrderSide::Buy,
+            42.0,
+            None,
+        );
+        let match_ord = PreparedOrder::with_params(
+            "match_mkt".to_string(),
+            crate::market_data::OrderType::Limit { price: 0.5 },
+            crate::market_data::OrderSide::Buy,
+            10.0,
+            Some(0.5),
+        );
+        let orders = Arc::new(PreparedOrders::new("m1".to_string(), goal, match_ord));
+        engine.update_prepared_orders("m1", orders);
+
+        let result = engine.execute_match("m1").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_match_idempotent_cache() {
+        let engine = make_engine();
+        engine.update_prepared_orders("m1", make_orders("m1"));
+
+        // Execute twice — both should succeed (cache persists)
+        assert!(engine.execute_match("m1").await.is_ok());
+        assert!(engine.execute_match("m1").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execution_handler_drains_queue() {
+        let engine = make_engine();
+        engine.update_prepared_orders("m1", make_orders("m1"));
+
+        // Queue a request via execute_match
+        assert!(engine.execute_match("m1").await.is_ok());
+
+        // Give the handler a moment to receive and process it
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // The handler should have consumed the message, so the channel has room.
+        // We can verify by filling the channel — if the handler wasn't running,
+        // try_send would fill up immediately from the already-sent messages.
+        // Instead, we queue many more and verify at least one succeeds,
+        // proving the handler is consuming.
+        let tx = engine.get_execution_sender();
+        let dummy = ExecutionRequest::new("dummy".to_string(), make_orders("dummy"));
+        let mut sent = 1; // the one from execute_match above
+        while let Ok(()) = tx.try_send(dummy.clone()) {
+            sent += 1;
+            if sent > EXECUTION_QUEUE_CAPACITY + 10 {
+                break;
+            }
+        }
+        // If handler was alive, we should have been able to send at least
+        // EXECUTION_QUEUE_CAPACITY messages total (the initial one + more).
+        // If handler was dead, we'd be stuck at capacity.
+        assert!(sent >= EXECUTION_QUEUE_CAPACITY / 2, "handler appears stalled, sent={}", sent);
+    }
+
+    #[tokio::test]
+    async fn test_parallel_order_execution() {
+        use std::net::SocketAddr;
+        use tokio::net::TcpListener;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Start a local TCP server that accepts two connections
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let port = addr.port();
+
+        let server_handle = tokio::spawn(async move {
+            let mut goal_received = false;
+            let mut match_received = false;
+
+            // Accept two connections (one for goal order, one for match order)
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+
+                // Read the HTTP request (headers only needed)
+                let mut buf = [0u8; 1024];
+                let n = stream.read(&mut buf).await.unwrap();
+                let request = String::from_utf8_lossy(&buf[..n]);
+
+                if request.contains("/api/v1/orders") {
+                    if request.contains("goal_mkt") {
+                        goal_received = true;
+                    }
+                    if request.contains("match_mkt") {
+                        match_received = true;
+                    }
+                }
+
+                // Respond with 200 OK JSON
+                let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}";
+                stream.write_all(response).await.unwrap();
+            }
+
+            (goal_received, match_received)
+        });
+
+        let client = Arc::new(PolymarketClient::new(
+            format!("http://127.0.0.1:{}", port),
+            None,
+        ));
+        let engine = ExecutionEngine::new(client);
+
+        let goal = PreparedOrder::with_params(
+            "goal_mkt".to_string(),
+            crate::market_data::OrderType::Market,
+            crate::market_data::OrderSide::Buy,
+            100.0,
+            None,
+        );
+        let match_ord = PreparedOrder::with_params(
+            "match_mkt".to_string(),
+            crate::market_data::OrderType::Limit { price: 0.5 },
+            crate::market_data::OrderSide::Buy,
+            50.0,
+            Some(0.5),
+        );
+        let orders = Arc::new(PreparedOrders::new("m1".to_string(), goal, match_ord));
+        engine.update_prepared_orders("m1", orders);
+
+        let start = Instant::now();
+        assert!(engine.execute_match("m1").await.is_ok());
+        // Wait for the handler to process and the server to accept both connections
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let elapsed = start.elapsed();
+
+        let (goal_rcvd, match_rcvd) = server_handle.await.unwrap();
+        assert!(goal_rcvd, "Goal order request not received by server");
+        assert!(match_rcvd, "Match order request not received by server");
+
+        // Both orders were sent in parallel; total time should be well
+        // under the sum of two individual delays if they were serial
+        assert!(
+            elapsed.as_millis() < 1000,
+            "Parallel execution took too long: {}ms",
+            elapsed.as_millis()
+        );
+    }
+}

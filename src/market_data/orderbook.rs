@@ -176,7 +176,7 @@ pub struct LiquidityUpdate {
     pub total_liquidity: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum OrderSide {
     Buy,
     Sell,
