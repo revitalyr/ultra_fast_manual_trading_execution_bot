@@ -1,0 +1,12 @@
+# Cargo configuration for Ultra Fast Manual Trading Execution Bot
+#
+# target-cpu=native enables CPU-specific optimisations for the deploy target.
+# Use it only on the actual production machine to get the correct instruction set.
+# Keep it commented out in the repo and uncomment it during deployment builds.
+#
+# [target.'cfg(all())']
+# rustflags = ["-C", "target-cpu=native"]
+
+# Uncomment for reproducible builds (disables compiler version fingerprints):
+# [target.'cfg(all())']
+# rustflags = ["-C", "target-cpu=native", "--remap-path-prefix", ".=src"]

@@ -61,8 +61,27 @@ secrecy = { version = "0.10", features = ["serde"] }
 # axum = "0.8"
 # tower = "0.5"
 
+[profile.dev]
+debug = true
+
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
 opt-level = 3
+# Uncomment below for production builds on target hardware:
+# (see .cargo/config.toml for the actual flag)
+# rustflags = ["-C", "target-cpu=native"]
+
+# Sanitizer profiles — run with --profile san-{address,thread}
+# Requires nightly Rust and appropriate platform support (Linux x86-64).
+# Usage:
+#   RUSTFLAGS="-Z sanitizer=address" cargo build --profile san-address --target x86_64-unknown-linux-gnu
+#   RUSTFLAGS="-Z sanitizer=thread" cargo build --profile san-thread --target x86_64-unknown-linux-gnu
+[profile.san-address]
+inherits = "release"
+debug = 1
+
+[profile.san-thread]
+inherits = "release"
+debug = 1
