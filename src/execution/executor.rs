@@ -1,6 +1,8 @@
-use crate::execution::prepared_orders::{ExecutionRequest, ExecutionResult, PreparedOrder, PreparedOrders};
-use crate::traits::ExecutionEngine as ExecutionEngineTrait;
+use crate::execution::prepared_orders::{
+    ExecutionRequest, ExecutionResult, PreparedOrder, PreparedOrders,
+};
 use crate::trading::polymarket_client::PolymarketClient;
+use crate::traits::ExecutionEngine as ExecutionEngineTrait;
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
@@ -22,7 +24,7 @@ impl ExecutionEngine {
     pub fn new(trading_client: Arc<PolymarketClient>) -> Self {
         let (execution_tx, execution_rx) = mpsc::channel(EXECUTION_QUEUE_CAPACITY);
         let prepared_orders_cache = Arc::new(DashMap::new());
-        
+
         let engine = Self {
             trading_client,
             prepared_orders_cache,
@@ -44,7 +46,11 @@ impl ExecutionEngine {
         self.execution_tx.clone()
     }
 
-    pub fn update_prepared_orders(&self, match_id: &str, orders: Arc<crate::execution::prepared_orders::PreparedOrders>) {
+    pub fn update_prepared_orders(
+        &self,
+        match_id: &str,
+        orders: Arc<crate::execution::prepared_orders::PreparedOrders>,
+    ) {
         self.prepared_orders_cache
             .entry(match_id.to_string())
             .and_modify(|swap| swap.store(orders.clone()))
@@ -55,18 +61,18 @@ impl ExecutionEngine {
         if let Some(swap_arc) = self.prepared_orders_cache.get(match_id) {
             let orders = swap_arc.load();
             let request = ExecutionRequest::new(match_id.to_string(), Arc::clone(&orders));
-            
+
             if let Err(e) = self.execution_tx.try_send(request) {
                 error!("Execution queue full, dropping request: {}", e);
                 return Err(anyhow::anyhow!("Execution queue full, try again later"));
             }
-            
+
             info!("Execution request queued for match: {}", match_id);
         } else {
             error!("No prepared orders found for match: {}", match_id);
             return Err(anyhow::anyhow!("No prepared orders available"));
         }
-        
+
         Ok(())
     }
 
@@ -79,7 +85,7 @@ impl ExecutionEngine {
 
         while let Some(request) = execution_rx.recv().await {
             let start_time = Instant::now();
-            
+
             info!("Executing match: {}", request.match_id);
 
             // Execute both orders in parallel for ultra-low latency
@@ -98,8 +104,16 @@ impl ExecutionEngine {
                 "Execution completed for match {} in {}ms. Goal: {}, Match: {}",
                 request.match_id,
                 execution_time,
-                if goal_result.is_ok() { "SUCCESS" } else { "FAILED" },
-                if match_result.is_ok() { "SUCCESS" } else { "FAILED" }
+                if goal_result.is_ok() {
+                    "SUCCESS"
+                } else {
+                    "FAILED"
+                },
+                if match_result.is_ok() {
+                    "SUCCESS"
+                } else {
+                    "FAILED"
+                }
             );
 
             // Log results for monitoring
@@ -119,7 +133,7 @@ impl ExecutionEngine {
         order: PreparedOrder,
     ) -> Result<ExecutionResult> {
         let start_time = Instant::now();
-        
+
         match client.submit_order(&order).await {
             Ok(_) => {
                 let execution_time = start_time.elapsed().as_millis() as u64;
@@ -171,7 +185,10 @@ mod tests {
     }
 
     fn make_engine() -> ExecutionEngine {
-        let client = Arc::new(PolymarketClient::new("http://localhost:1".to_string(), None));
+        let client = Arc::new(PolymarketClient::new(
+            "http://localhost:1".to_string(),
+            None,
+        ));
         ExecutionEngine::new(client)
     }
 
@@ -223,19 +240,30 @@ mod tests {
 
         let result = engine.execute_match("other").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No prepared orders"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No prepared orders"));
     }
 
     #[tokio::test]
     async fn test_update_prepared_orders_overwrites() {
         let engine = make_engine();
-        let first = PreparedOrders::new("m1".to_string(), PreparedOrder::placeholder(), PreparedOrder::placeholder());
+        let first = PreparedOrders::new(
+            "m1".to_string(),
+            PreparedOrder::placeholder(),
+            PreparedOrder::placeholder(),
+        );
         let first_ts = first.updated_at;
 
         // Small delay so the second has a different timestamp
         tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
-        let second = PreparedOrders::new("m1".to_string(), PreparedOrder::placeholder(), PreparedOrder::placeholder());
+        let second = PreparedOrders::new(
+            "m1".to_string(),
+            PreparedOrder::placeholder(),
+            PreparedOrder::placeholder(),
+        );
         assert!(second.updated_at > first_ts);
 
         engine.update_prepared_orders("m1", Arc::new(first));
@@ -321,13 +349,17 @@ mod tests {
         // If handler was alive, we should have been able to send at least
         // EXECUTION_QUEUE_CAPACITY messages total (the initial one + more).
         // If handler was dead, we'd be stuck at capacity.
-        assert!(sent >= EXECUTION_QUEUE_CAPACITY / 2, "handler appears stalled, sent={}", sent);
+        assert!(
+            sent >= EXECUTION_QUEUE_CAPACITY / 2,
+            "handler appears stalled, sent={}",
+            sent
+        );
     }
 
     #[tokio::test]
     async fn test_parallel_order_execution() {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         // Start a local TCP server that accepts two connections
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -417,8 +449,8 @@ mod tests {
     }
 
     async fn run_error_server(response_body: &'static [u8]) -> u16 {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -473,7 +505,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_single_order_http_200() {
-        let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}";
+        let resp =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}";
         let port = run_error_server(resp).await;
 
         let client = Arc::new(PolymarketClient::new(
@@ -507,8 +540,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_handler_one_fails_one_succeeds() {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         // Server: first connection OK, second connection 400
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -609,8 +642,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_handler_both_fail() {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();

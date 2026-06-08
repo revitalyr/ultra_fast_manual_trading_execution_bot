@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::execution::{ExecutionEngine, OrderPreBuilder, PreparedOrder, PreparedOrders};
 use crate::market_data::{MarketUpdate, OrderBook};
+use anyhow::Result;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -41,9 +41,6 @@ impl MatchConfig {
 pub struct MatchEngine {
     config: MatchConfig,
     prepared_orders: Arc<ArcSwap<PreparedOrders>>,
-    goal_orderbook: Arc<ArcSwap<OrderBook>>,
-    match_orderbook: Arc<ArcSwap<OrderBook>>,
-    order_pre_builder: OrderPreBuilder,
     execution_engine: Arc<ExecutionEngine>,
     _market_update_tx: mpsc::UnboundedSender<MarketUpdate>, // Keep sender alive
 }
@@ -63,8 +60,12 @@ impl MatchEngine {
             PreparedOrder::placeholder(),
             PreparedOrder::placeholder(),
         )));
-        let goal_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(config.goal_market_id.clone())));
-        let match_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(config.clone().match_market_id)));
+        let goal_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(
+            config.goal_market_id.clone(),
+        )));
+        let match_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(
+            config.clone().match_market_id,
+        )));
 
         // Initialize the execution engine's cache with starting orders.
         let initial_orders = prepared_orders.load().clone();
@@ -91,15 +92,13 @@ impl MatchEngine {
                 h_order_pre_builder,
                 h_execution_engine,
                 h_match_id,
-            ).await;
+            )
+            .await;
         });
 
         Self {
             config: config.clone(),
             prepared_orders,
-            goal_orderbook,
-            match_orderbook,
-            order_pre_builder,
             execution_engine,
             _market_update_tx: market_update_tx,
         }
@@ -119,6 +118,7 @@ impl MatchEngine {
         self.prepared_orders.load().clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn market_data_handler(
         mut market_update_rx: mpsc::UnboundedReceiver<MarketUpdate>,
         goal_market_id: String,
@@ -131,34 +131,30 @@ impl MatchEngine {
         match_id: String,
     ) {
         info!("Market data handler started for match: {}", match_id);
-        
+
         while let Some(first) = market_update_rx.recv().await {
             let mut latest_goal: Option<OrderBook> = None;
             let mut latest_match: Option<OrderBook> = None;
 
             // Apply the first update
-            match first.update_type {
-                crate::market_data::MarketUpdateType::OrderBookUpdate(ob) => {
-                    if ob.market_id == goal_market_id {
-                        latest_goal = Some(ob);
-                    } else if ob.market_id == match_market_id {
-                        latest_match = Some(ob);
-                    }
+            if let crate::market_data::MarketUpdateType::OrderBookUpdate(ob) = first.update_type {
+                if ob.market_id == goal_market_id {
+                    latest_goal = Some(ob);
+                } else if ob.market_id == match_market_id {
+                    latest_match = Some(ob);
                 }
-                _ => {}
             }
 
             // Drain any pending updates in a burst, keeping only the latest state per market
             while let Ok(update) = market_update_rx.try_recv() {
-                match update.update_type {
-                    crate::market_data::MarketUpdateType::OrderBookUpdate(ob) => {
-                        if ob.market_id == goal_market_id {
-                            goal_orderbook.store(Arc::new(ob));
-                        } else if ob.market_id == match_market_id {
-                            match_orderbook.store(Arc::new(ob));
-                        }
+                if let crate::market_data::MarketUpdateType::OrderBookUpdate(ob) =
+                    update.update_type
+                {
+                    if ob.market_id == goal_market_id {
+                        goal_orderbook.store(Arc::new(ob));
+                    } else if ob.market_id == match_market_id {
+                        match_orderbook.store(Arc::new(ob));
                     }
-                    _ => {}
                 }
             }
 
@@ -175,9 +171,17 @@ impl MatchEngine {
             let current_match_ob = match_orderbook.load();
 
             if let Err(e) = order_pre_builder.update_orders_on_market_data(
-                &match_id, &goal_market_id, &match_market_id, &current_goal_ob, &current_match_ob, &prepared_orders,
+                &match_id,
+                &goal_market_id,
+                &match_market_id,
+                &current_goal_ob,
+                &current_match_ob,
+                &prepared_orders,
             ) {
-                error!("Failed to rebuild prepared orders for match {}: {}", match_id, e);
+                error!(
+                    "Failed to rebuild prepared orders for match {}: {}",
+                    match_id, e
+                );
             } else {
                 let new_prepared_orders = prepared_orders.load();
                 execution_engine.update_prepared_orders(&match_id, new_prepared_orders.clone());
@@ -220,7 +224,6 @@ impl MatchManager {
     pub fn get_match(&self, match_id: &str) -> Option<Arc<MatchEngine>> {
         self.matches.get(match_id).map(|entry| entry.clone())
     }
-
 
     pub fn get_all_matches(&self) -> Vec<Arc<MatchEngine>> {
         self.matches.iter().map(|entry| entry.clone()).collect()

@@ -1,22 +1,21 @@
-mod market_data;
-mod execution;
-mod trading;
-mod match_engine;
-mod ui;
 mod config;
+mod execution;
+mod market_data;
+mod match_engine;
+mod trading;
 mod traits;
+mod ui;
 mod util;
 
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{error, info};
-use tracing_subscriber;
 
-use execution::ExecutionEngine;
-use trading::PolymarketClient;
-use match_engine::MatchManager;
-use ui::KeyboardDashboard;
 use config::Config;
+use execution::ExecutionEngine;
+use match_engine::MatchManager;
+use trading::PolymarketClient;
+use ui::KeyboardDashboard;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,14 +42,16 @@ async fn main() -> Result<()> {
     let match_manager = Arc::new(MatchManager::new(execution_engine.clone()));
 
     // Load match configuration from file
-    let config = Config::from_default_path()
-        .unwrap_or_else(|e| {
-            info!("Failed to load config file: {}. Using fallback configuration.", e);
-            Config::from_file("config.example.toml").unwrap_or_else(|_| {
-                info!("No config file found. Creating default configuration.");
-                create_default_config()
-            })
-        });
+    let config = Config::from_default_path().unwrap_or_else(|e| {
+        info!(
+            "Failed to load config file: {}. Using fallback configuration.",
+            e
+        );
+        Config::from_file("config.example.toml").unwrap_or_else(|_| {
+            info!("No config file found. Creating default configuration.");
+            create_default_config()
+        })
+    });
 
     // Configure matches from config
     configure_matches_from_config(&match_manager, &config);
@@ -61,7 +62,7 @@ async fn main() -> Result<()> {
 
     // Start keyboard dashboard
     let mut dashboard = KeyboardDashboard::new(match_manager.clone());
-    
+
     info!("Application ready. Use keyboard shortcuts to execute trades.");
     info!("Press 1-9 to execute matches, Q to quit.");
 
@@ -76,7 +77,7 @@ async fn main() -> Result<()> {
 
 fn configure_matches_from_config(match_manager: &Arc<MatchManager>, config: &Config) {
     let match_configs = config.get_match_configs();
-    
+
     for match_config in match_configs {
         let match_name = match_config.name.clone();
         match_manager.add_match(match_config);
@@ -126,14 +127,17 @@ mod tests {
         let client = Arc::new(PolymarketClient::new("test_url".to_string(), None));
         let engine = ExecutionEngine::new(client);
         // Bounded sender has async send with backpressure
-        let result = engine.get_execution_sender().send(crate::execution::ExecutionRequest::new(
-            "test".to_string(), 
-            Arc::new(crate::execution::PreparedOrders::new(
+        let result = engine
+            .get_execution_sender()
+            .send(crate::execution::ExecutionRequest::new(
                 "test".to_string(),
-                crate::execution::PreparedOrder::placeholder(),
-                crate::execution::PreparedOrder::placeholder(),
+                Arc::new(crate::execution::PreparedOrders::new(
+                    "test".to_string(),
+                    crate::execution::PreparedOrder::placeholder(),
+                    crate::execution::PreparedOrder::placeholder(),
+                )),
             ))
-        )).await;
+            .await;
         assert!(result.is_ok());
     }
 

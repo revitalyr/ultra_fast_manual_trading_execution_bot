@@ -11,19 +11,19 @@ use tokio::sync::mpsc;
 #[async_trait::async_trait]
 pub trait TradingClient: Send + Sync {
     async fn submit_order(&self, order: &PreparedOrder) -> Result<Value>;
-    
+
     async fn submit_prepared_order(
         &self,
         payload: &Bytes,
         signature: Option<&Bytes>,
     ) -> Result<Value>;
-    
+
     async fn get_markets(&self) -> Result<Vec<Value>>;
-    
+
     async fn get_orderbook(&self, market_id: &str) -> Result<Value>;
-    
+
     async fn get_balance(&self) -> Result<Value>;
-    
+
     async fn cancel_order(&self, order_id: &str) -> Result<Value>;
 }
 
@@ -32,8 +32,10 @@ pub trait TradingClient: Send + Sync {
 #[async_trait::async_trait]
 pub trait ExecutionEngine: Send + Sync {
     fn update_prepared_orders(&self, match_id: &str, orders: Arc<PreparedOrders>);
-    
+
     async fn execute_match(&self, match_id: &str) -> Result<()>;
-    
-    fn get_execution_sender(&self) -> mpsc::Sender<crate::execution::prepared_orders::ExecutionRequest>;
+
+    fn get_execution_sender(
+        &self,
+    ) -> mpsc::Sender<crate::execution::prepared_orders::ExecutionRequest>;
 }

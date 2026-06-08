@@ -20,9 +20,13 @@ pub struct DashboardRenderer;
 impl DashboardRenderer {
     pub fn render_dashboard(matches: &[Arc<MatchConfig>], feedback: &Option<String>) -> Result<()> {
         let mut stdout = stdout();
-        
+
         // Clear screen and move to top
-        execute!(stdout, Clear(ClearType::All), crossterm::cursor::MoveTo(0, 0))?;
+        execute!(
+            stdout,
+            Clear(ClearType::All),
+            crossterm::cursor::MoveTo(0, 0)
+        )?;
 
         // Header
         println!("╔════════════════════════════════════════════════════════════════╗");
@@ -43,15 +47,17 @@ impl DashboardRenderer {
 
             for (index, config) in matches.iter().enumerate() {
                 let key = (index + 1).to_string();
-                let shortcut = config.keyboard_shortcut.map_or(key.clone(), |c| c.to_string());
-                
+                let shortcut = config
+                    .keyboard_shortcut
+                    .map_or(key.clone(), |c| c.to_string());
+
                 // Truncate name if too long
                 let name = if config.name.len() > MAX_DISPLAY_NAME_LEN {
                     format!("{}...", &config.name[..TRUNCATED_NAME_LEN])
                 } else {
                     config.name.clone()
                 };
-                
+
                 println!("│  {} │ {:<52} │", shortcut, name);
             }
 
@@ -77,7 +83,10 @@ impl DashboardRenderer {
 pub struct InputHandler;
 
 impl InputHandler {
-    pub fn handle_key_event(key: KeyEvent, matches: &[Arc<MatchConfig>]) -> Option<DashboardAction> {
+    pub fn handle_key_event(
+        key: KeyEvent,
+        matches: &[Arc<MatchConfig>],
+    ) -> Option<DashboardAction> {
         match key.code {
             KeyCode::Char('q' | 'Q') => Some(DashboardAction::Quit),
             KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -118,13 +127,16 @@ impl DashboardController {
 
     pub async fn execute_match(&self, match_id: &str) -> Result<String> {
         info!("Executing match via keyboard: {}", match_id);
-        
+
         let start_time = std::time::Instant::now();
-        
+
         match self.match_manager.execute_match(match_id).await {
             Ok(_) => {
                 let execution_time_ms = start_time.elapsed().as_millis();
-                Ok(format!("✅ SUCCESS! Match: {} | Time: {}ms", match_id, execution_time_ms))
+                Ok(format!(
+                    "✅ SUCCESS! Match: {} | Time: {}ms",
+                    match_id, execution_time_ms
+                ))
             }
             Err(e) => {
                 error!("Match execution failed: {}", e);
@@ -155,7 +167,7 @@ impl KeyboardDashboard {
             .iter()
             .map(|engine| Arc::new(engine.get_config().clone()))
             .collect();
-        
+
         Self {
             controller: DashboardController::new(match_manager),
             current_feedback: None,
@@ -175,7 +187,8 @@ impl KeyboardDashboard {
             // Handle keyboard input
             if event::poll(Duration::from_millis(KEYBOARD_POLL_INTERVAL_MS))? {
                 if let Event::Key(key) = event::read()? {
-                    if let Some(action) = InputHandler::handle_key_event(key, &self.cached_matches) {
+                    if let Some(action) = InputHandler::handle_key_event(key, &self.cached_matches)
+                    {
                         match action {
                             DashboardAction::ExecuteMatch(match_id) => {
                                 self.handle_execute_match(match_id).await?;

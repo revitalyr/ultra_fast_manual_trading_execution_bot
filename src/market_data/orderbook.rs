@@ -96,22 +96,18 @@ impl OrderBook {
 
     #[allow(dead_code)] // Used by OrderPreBuilder
     pub fn get_best_bid(&self) -> Option<PriceLevel> {
-        self.bids
-            .last_key_value()
-            .map(|(key, &size)| PriceLevel {
-                price: (*key).into(),
-                size,
-            })
+        self.bids.last_key_value().map(|(key, &size)| PriceLevel {
+            price: (*key).into(),
+            size,
+        })
     }
 
     #[allow(dead_code)] // Used by OrderPreBuilder
     pub fn get_best_ask(&self) -> Option<PriceLevel> {
-        self.asks
-            .first_key_value()
-            .map(|(key, &size)| PriceLevel {
-                price: (*key).into(),
-                size,
-            })
+        self.asks.first_key_value().map(|(key, &size)| PriceLevel {
+            price: (*key).into(),
+            size,
+        })
     }
 
     #[allow(dead_code)] // Not used in current demo, but useful for analysis
@@ -232,7 +228,7 @@ pub struct Market {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutcomeType {
-    Binary, // YES/NO
+    Binary,                   // YES/NO
     Categorical(Vec<String>), // Multiple outcomes
 }
 

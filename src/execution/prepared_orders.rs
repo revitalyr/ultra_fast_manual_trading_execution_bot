@@ -117,7 +117,8 @@ pub struct PreparedOrders {
     pub match_id: String,
     pub goal_market_order: PreparedOrder,
     pub match_result_order: PreparedOrder,
-    #[allow(dead_code)] // This field is not currently read, but useful for debugging/future features
+    #[allow(dead_code)]
+    // This field is not currently read, but useful for debugging/future features
     pub updated_at: u64,
 }
 

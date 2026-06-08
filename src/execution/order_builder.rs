@@ -29,28 +29,30 @@ impl OrderPreBuilder {
         // Build match result market order - limit order up to max price
         let match_order = self.build_match_result_order(match_market_id, match_orderbook)?;
 
-        let prepared_orders = PreparedOrders::new(
-            match_id.to_string(),
-            goal_order,
-            match_order,
-        );
+        let prepared_orders = PreparedOrders::new(match_id.to_string(), goal_order, match_order);
 
         info!("Built prepared orders for match: {}", match_id);
-        debug!("Goal order size: {}, Match order price: {:?}", 
-               prepared_orders.goal_market_order.size,
-               prepared_orders.match_result_order.price);
+        debug!(
+            "Goal order size: {}, Match order price: {:?}",
+            prepared_orders.goal_market_order.size, prepared_orders.match_result_order.price
+        );
 
         Ok(prepared_orders)
     }
 
-    fn build_goal_market_order(&self, market_id: &str, orderbook: &OrderBook) -> Result<PreparedOrder> {
+    fn build_goal_market_order(
+        &self,
+        market_id: &str,
+        orderbook: &OrderBook,
+    ) -> Result<PreparedOrder> {
         // Use get_best_ask to find the best price and its size
-        let best_ask = orderbook.get_best_ask()
+        let best_ask = orderbook
+            .get_best_ask()
             .ok_or_else(|| anyhow::anyhow!("No ask liquidity available in goal market"))?;
 
         // For a market order, we might want to consume all available liquidity up to a certain point
         let total_liquidity = best_ask.size; // Simplified: just take the best ask's size for now
-        
+
         if total_liquidity <= 0.0 {
             return Err(anyhow::anyhow!("No liquidity available in goal market"));
         }
@@ -66,9 +68,14 @@ impl OrderPreBuilder {
         Ok(order)
     }
 
-    fn build_match_result_order(&self, market_id: &str, orderbook: &OrderBook) -> Result<PreparedOrder> {
+    fn build_match_result_order(
+        &self,
+        market_id: &str,
+        orderbook: &OrderBook,
+    ) -> Result<PreparedOrder> {
         // Find the best ask price within our limit
-        let best_ask_level = orderbook.get_best_ask()
+        let best_ask_level = orderbook
+            .get_best_ask()
             .ok_or_else(|| anyhow::anyhow!("No orders available within price limit"))?;
 
         if best_ask_level.price > self.max_price_limit {
@@ -102,7 +109,13 @@ impl OrderPreBuilder {
         match_orderbook: &OrderBook,
         orders_cache: &ArcSwap<PreparedOrders>,
     ) -> Result<()> {
-        match self.build_orders_for_match(match_id, goal_market_id, match_market_id, goal_orderbook, match_orderbook) {
+        match self.build_orders_for_match(
+            match_id,
+            goal_market_id,
+            match_market_id,
+            goal_orderbook,
+            match_orderbook,
+        ) {
             Ok(new_orders) => {
                 orders_cache.store(Arc::new(new_orders));
                 debug!("Updated prepared orders for match: {}", match_id);
@@ -157,7 +170,9 @@ mod tests {
         let goal_ob = orderbook_with_asks(&[(0.95, 100.0)]);
         let match_ob = orderbook_with_asks(&[(0.85, 50.0)]);
 
-        let orders = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob).unwrap();
+        let orders = builder
+            .build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob)
+            .unwrap();
 
         match orders.goal_market_order.order_type {
             OrderType::Market => {}
@@ -174,7 +189,9 @@ mod tests {
         let goal_ob = orderbook_with_asks(&[(0.95, 100.0)]);
         let match_ob = orderbook_with_asks(&[(0.85, 50.0)]);
 
-        let orders = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob).unwrap();
+        let orders = builder
+            .build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob)
+            .unwrap();
 
         match orders.match_result_order.order_type {
             OrderType::Limit { price } => assert_eq!(price, 0.85),
@@ -204,7 +221,10 @@ mod tests {
 
         let result = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No orders available"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No orders available"));
     }
 
     #[test]
@@ -215,7 +235,10 @@ mod tests {
 
         let result = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("above max price limit"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("above max price limit"));
     }
 
     #[test]
@@ -244,7 +267,9 @@ mod tests {
         let goal_ob = orderbook_with_asks(&[(1.10, 200.0), (0.90, 100.0), (0.95, 50.0)]);
         let match_ob = orderbook_with_asks(&[(0.85, 50.0)]);
 
-        let orders = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob).unwrap();
+        let orders = builder
+            .build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob)
+            .unwrap();
         // Should pick the lowest ask (0.90) for the goal market order
         assert_eq!(orders.goal_market_order.size, 100.0);
     }
@@ -255,7 +280,9 @@ mod tests {
         let goal_ob = orderbook_with_asks(&[(0.95, 100.0)]);
         let match_ob = orderbook_with_asks(&[(0.90, 30.0), (0.80, 50.0), (0.85, 20.0)]);
 
-        let orders = builder.build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob).unwrap();
+        let orders = builder
+            .build_orders_for_match("m1", "goal", "match", &goal_ob, &match_ob)
+            .unwrap();
         // Should pick the lowest ask (0.80) for the match limit order
         assert_eq!(orders.match_result_order.price, Some(0.80));
         assert_eq!(orders.match_result_order.size, 50.0);
@@ -283,7 +310,8 @@ mod tests {
             PreparedOrder::placeholder(),
         )));
 
-        let result = builder.update_orders_on_market_data("m1", "goal", "match", &goal_ob, &match_ob, &cache);
+        let result = builder
+            .update_orders_on_market_data("m1", "goal", "match", &goal_ob, &match_ob, &cache);
         assert!(result.is_ok());
 
         let stored = cache.load();
@@ -304,7 +332,8 @@ mod tests {
         ));
         let cache = ArcSwap::new(old_orders.clone());
 
-        let result = builder.update_orders_on_market_data("m1", "goal", "match", &goal_ob, &match_ob, &cache);
+        let result = builder
+            .update_orders_on_market_data("m1", "goal", "match", &goal_ob, &match_ob, &cache);
         assert!(result.is_err());
 
         let stored = cache.load();

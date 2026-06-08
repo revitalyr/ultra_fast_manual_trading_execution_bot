@@ -40,7 +40,11 @@ impl PolymarketClient {
         format!("{}/api/v1/{}", self.base_url, path)
     }
 
-    async fn check_response(&self, response: reqwest::Response, context: &str) -> Result<reqwest::Response> {
+    async fn check_response(
+        &self,
+        response: reqwest::Response,
+        context: &str,
+    ) -> Result<reqwest::Response> {
         if response.status().is_success() {
             Ok(response)
         } else {
@@ -53,22 +57,28 @@ impl PolymarketClient {
 
     pub async fn submit_order(&self, order: &PreparedOrder) -> Result<Value> {
         let url = self.url("orders");
-        
+
         // Build payload with fresh timestamp at execution time
         let payload = order.build_payload()?;
-        
-        let mut request = self.client
+
+        let mut request = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .body(payload);
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
         debug!("Submitting order to market: {}", order.market_id);
 
-        let response = self.check_response(request.send().await?, "Order submission failed").await?;
+        let response = self
+            .check_response(request.send().await?, "Order submission failed")
+            .await?;
         let result: Value = response.json().await?;
         info!("Order submitted successfully: {}", order.id);
         debug!("Order response: {}", result);
@@ -81,8 +91,9 @@ impl PolymarketClient {
         signature: Option<&Bytes>,
     ) -> Result<Value> {
         let url = self.url("orders/submit");
-        
-        let mut request = self.client
+
+        let mut request = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .body(payload.clone());
@@ -92,10 +103,15 @@ impl PolymarketClient {
         }
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
-        let response = self.check_response(request.send().await?, "Prepared order submission failed").await?;
+        let response = self
+            .check_response(request.send().await?, "Prepared order submission failed")
+            .await?;
         let result: Value = response.json().await?;
         debug!("Prepared order submitted successfully");
         Ok(result)
@@ -103,14 +119,19 @@ impl PolymarketClient {
 
     async fn get_markets_internal(&self) -> Result<Vec<Value>> {
         let url = self.url("markets");
-        
+
         let mut request = self.client.get(&url);
-        
+
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
-        let response = self.check_response(request.send().await?, "Failed to get markets").await?;
+        let response = self
+            .check_response(request.send().await?, "Failed to get markets")
+            .await?;
         let markets: Vec<Value> = response.json().await?;
         info!("Retrieved {} markets", markets.len());
         Ok(markets)
@@ -118,14 +139,19 @@ impl PolymarketClient {
 
     async fn get_orderbook_internal(&self, market_id: &str) -> Result<Value> {
         let url = self.url(&format!("markets/{}/orderbook", market_id));
-        
+
         let mut request = self.client.get(&url);
-        
+
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
-        let response = self.check_response(request.send().await?, "Failed to get orderbook").await?;
+        let response = self
+            .check_response(request.send().await?, "Failed to get orderbook")
+            .await?;
         let orderbook: Value = response.json().await?;
         debug!("Retrieved orderbook for market: {}", market_id);
         Ok(orderbook)
@@ -133,14 +159,19 @@ impl PolymarketClient {
 
     async fn get_balance_internal(&self) -> Result<Value> {
         let url = self.url("account/balance");
-        
+
         let mut request = self.client.get(&url);
-        
+
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
-        let response = self.check_response(request.send().await?, "Failed to get balance").await?;
+        let response = self
+            .check_response(request.send().await?, "Failed to get balance")
+            .await?;
         let balance: Value = response.json().await?;
         debug!("Retrieved account balance");
         Ok(balance)
@@ -148,14 +179,19 @@ impl PolymarketClient {
 
     async fn cancel_order_internal(&self, order_id: &str) -> Result<Value> {
         let url = self.url(&format!("orders/{}/cancel", order_id));
-        
+
         let mut request = self.client.post(&url);
-        
+
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
-        let response = self.check_response(request.send().await?, "Failed to cancel order").await?;
+        let response = self
+            .check_response(request.send().await?, "Failed to cancel order")
+            .await?;
         let result: Value = response.json().await?;
         info!("Order cancelled successfully: {}", order_id);
         Ok(result)
@@ -167,22 +203,28 @@ impl TradingClient for PolymarketClient {
     async fn submit_order(&self, order: &PreparedOrder) -> Result<Value> {
         // Call the public method directly
         let url = self.url("orders");
-        
+
         // Build payload with fresh timestamp at execution time
         let payload = order.build_payload()?;
-        
-        let mut request = self.client
+
+        let mut request = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .body(payload);
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", api_key.expose_secret()),
+            );
         }
 
         debug!("Submitting order to market: {}", order.market_id);
 
-        let response = self.check_response(request.send().await?, "Order submission failed").await?;
+        let response = self
+            .check_response(request.send().await?, "Order submission failed")
+            .await?;
         let result: Value = response.json().await?;
         info!("Order submitted successfully: {}", order.id);
         debug!("Order response: {}", result);
@@ -194,7 +236,8 @@ impl TradingClient for PolymarketClient {
         payload: &Bytes,
         signature: Option<&Bytes>,
     ) -> Result<Value> {
-        self.submit_prepared_order_internal(payload, signature).await
+        self.submit_prepared_order_internal(payload, signature)
+            .await
     }
 
     async fn get_markets(&self) -> Result<Vec<Value>> {

@@ -27,22 +27,24 @@ impl Config {
     }
 
     pub fn from_default_path() -> Result<Self> {
-        let config_path = std::env::var("CONFIG_PATH")
-            .unwrap_or_else(|_| "config.toml".to_string());
+        let config_path =
+            std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".to_string());
         Self::from_file(config_path)
     }
 
     pub fn get_match_configs(&self) -> Vec<crate::match_engine::MatchConfig> {
         self.matches
             .iter()
-            .map(|m| crate::match_engine::MatchConfig::new(
-                m.id.clone(),
-                m.name.clone(),
-                m.goal_market_id.clone(),
-                m.match_market_id.clone(),
-                m.max_price_limit,
-                m.keyboard_shortcut,
-            ))
+            .map(|m| {
+                crate::match_engine::MatchConfig::new(
+                    m.id.clone(),
+                    m.name.clone(),
+                    m.goal_market_id.clone(),
+                    m.match_market_id.clone(),
+                    m.max_price_limit,
+                    m.keyboard_shortcut,
+                )
+            })
             .collect()
     }
 }

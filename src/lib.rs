@@ -1,8 +1,8 @@
 //! Ultra Fast Manual Trading Execution Bot
-//! 
-//! A high-performance Rust trading bot designed for ultra-low latency 
-//! manual execution on Polymarket. The system allows users to manually 
-//! trigger trades by pressing keyboard shortcuts, with orders pre-built 
+//!
+//! A high-performance Rust trading bot designed for ultra-low latency
+//! manual execution on Polymarket. The system allows users to manually
+//! trigger trades by pressing keyboard shortcuts, with orders pre-built
 //! and pre-signed for sub-millisecond execution times.
 //!
 //! # Features
@@ -57,9 +57,11 @@ pub mod ui;
 pub mod util;
 
 // Re-export commonly used types
-pub use execution::{ExecutionEngine, PreparedOrder, PreparedOrders, ExecutionRequest, ExecutionResult};
-pub use market_data::{OrderBook, MarketUpdate, OrderSide, OrderType};
-pub use match_engine::{MatchEngine, MatchManager, MatchConfig};
+pub use execution::{
+    ExecutionEngine, ExecutionRequest, ExecutionResult, PreparedOrder, PreparedOrders,
+};
+pub use market_data::{MarketUpdate, OrderBook, OrderSide, OrderType};
+pub use match_engine::{MatchConfig, MatchEngine, MatchManager};
 pub use trading::PolymarketClient;
 pub use traits::{ExecutionEngine as ExecutionEngineTrait, TradingClient};
 pub use ui::KeyboardDashboard;
