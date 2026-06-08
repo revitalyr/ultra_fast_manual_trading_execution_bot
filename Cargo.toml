@@ -17,6 +17,10 @@ path = "src/lib.rs"
 name = "ultra_fast_manual_trading_execution_bot"
 path = "src/main.rs"
 
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
 [dependencies]
 # Async runtime (minimal features)
 tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
