@@ -1,10 +1,11 @@
 use anyhow::Result;
-use crate::execution::{ExecutionEngine, OrderPreBuilder, PreparedOrders};
+use crate::execution::{ExecutionEngine, OrderPreBuilder, PreparedOrder, PreparedOrders};
 use crate::market_data::{MarketUpdate, OrderBook};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;use tracing::{debug, error, info, warn};
+use tokio::sync::mpsc;
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct MatchConfig {
@@ -44,7 +45,7 @@ pub struct MatchEngine {
     match_orderbook: Arc<ArcSwap<OrderBook>>,
     order_pre_builder: OrderPreBuilder,
     execution_engine: Arc<ExecutionEngine>,
-    market_update_rx: Option<mpsc::UnboundedReceiver<MarketUpdate>>,
+    _market_update_tx: mpsc::UnboundedSender<MarketUpdate>, // Keep sender alive
 }
 
 impl MatchEngine {
@@ -52,60 +53,56 @@ impl MatchEngine {
         config: MatchConfig,
         execution_engine: Arc<ExecutionEngine>,
         market_update_rx: mpsc::UnboundedReceiver<MarketUpdate>,
+        market_update_tx: mpsc::UnboundedSender<MarketUpdate>,
     ) -> Self {
+        info!("Starting match engine for: {}", config.name);
         let order_pre_builder = OrderPreBuilder::new(config.max_price_limit);
-        
-        Self {
-            config: config.clone(),
-            prepared_orders: Arc::new(ArcSwap::from_pointee(PreparedOrders::new(
-                config.id.clone(),
-                Default::default(),
-                Default::default(),
-            ))),
-            goal_orderbook: Arc::new(ArcSwap::from_pointee(OrderBook::new(config.goal_market_id.clone()))),
-            match_orderbook: Arc::new(ArcSwap::from_pointee(OrderBook::new(config.clone().match_market_id))),
-            order_pre_builder,
-            execution_engine,
-            market_update_rx: Some(market_update_rx),
-        }
-    }
 
-    pub async fn start(&mut self) -> Result<()> {
-        info!("Starting match engine for: {}", self.config.name);
+        let prepared_orders = Arc::new(ArcSwap::from_pointee(PreparedOrders::new(
+            config.id.clone(),
+            PreparedOrder::placeholder(),
+            PreparedOrder::placeholder(),
+        )));
+        let goal_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(config.goal_market_id.clone())));
+        let match_orderbook = Arc::new(ArcSwap::from_pointee(OrderBook::new(config.clone().match_market_id)));
 
-        // Start market data handler
-        let goal_market_id = self.config.goal_market_id.clone(); // Clone for the handler
-        let match_market_id = self.config.match_market_id.clone();
-        let goal_orderbook = self.goal_orderbook.clone();
-        let match_orderbook = self.match_orderbook.clone();
-        let prepared_orders = self.prepared_orders.clone();
-        let order_pre_builder = self.order_pre_builder.clone();
-        let execution_engine = self.execution_engine.clone();
-        let match_id = self.config.id.clone();
+        // Initialize the execution engine's cache with starting orders.
+        let initial_orders = prepared_orders.load().clone();
+        execution_engine.update_prepared_orders(&config.id, initial_orders);
 
-        let market_update_rx = self.market_update_rx.take().expect("Market update receiver already taken or not set");
-        
-        // Initialize the execution engine's cache with our starting orders.
-        // This ensures the match is ready to be triggered even before the first market data update arrives,
-        // preventing "No prepared orders available" errors.
-        let initial_orders = self.prepared_orders.load().clone();
-        self.execution_engine.update_prepared_orders(&self.config.id, initial_orders);
+        // Spawn market data handler with the receiver immediately.
+        let h_goal_market_id = config.goal_market_id.clone();
+        let h_match_market_id = config.match_market_id.clone();
+        let h_goal_orderbook = goal_orderbook.clone();
+        let h_match_orderbook = match_orderbook.clone();
+        let h_prepared_orders = prepared_orders.clone();
+        let h_order_pre_builder = order_pre_builder.clone();
+        let h_execution_engine = execution_engine.clone();
+        let h_match_id = config.id.clone();
 
         tokio::spawn(async move {
             Self::market_data_handler(
                 market_update_rx,
-                goal_market_id,
-                match_market_id,
-                goal_orderbook,
-                match_orderbook,
-                prepared_orders,
-                order_pre_builder,
-                execution_engine,
-                match_id,
+                h_goal_market_id,
+                h_match_market_id,
+                h_goal_orderbook,
+                h_match_orderbook,
+                h_prepared_orders,
+                h_order_pre_builder,
+                h_execution_engine,
+                h_match_id,
             ).await;
         });
 
-        Ok(())
+        Self {
+            config: config.clone(),
+            prepared_orders,
+            goal_orderbook,
+            match_orderbook,
+            order_pre_builder,
+            execution_engine,
+            _market_update_tx: market_update_tx,
+        }
     }
 
     pub async fn execute(&self) -> Result<()> {
@@ -135,39 +132,55 @@ impl MatchEngine {
     ) {
         info!("Market data handler started for match: {}", match_id);
         
-        while let Some(update) = market_update_rx.recv().await {
-            debug!("Received market update for market: {}", update.market_id);
+        while let Some(first) = market_update_rx.recv().await {
+            let mut latest_goal: Option<OrderBook> = None;
+            let mut latest_match: Option<OrderBook> = None;
 
-            match update.update_type {
-                crate::market_data::MarketUpdateType::OrderBookUpdate(ob_update) => {
-                    if ob_update.market_id == goal_market_id {
-                        goal_orderbook.store(Arc::new(ob_update));
-                        debug!("Goal orderbook updated for match: {}", match_id);
-                    } else if ob_update.market_id == match_market_id {
-                        match_orderbook.store(Arc::new(ob_update));
-                        debug!("Match orderbook updated for match: {}", match_id);
-                    } else {
-                        warn!("Received orderbook update for unknown market_id: {}", ob_update.market_id);
-                        continue;
+            // Apply the first update
+            match first.update_type {
+                crate::market_data::MarketUpdateType::OrderBookUpdate(ob) => {
+                    if ob.market_id == goal_market_id {
+                        latest_goal = Some(ob);
+                    } else if ob.market_id == match_market_id {
+                        latest_match = Some(ob);
                     }
-
-                    // After updating an orderbook, rebuild prepared orders
-                    let current_goal_ob = goal_orderbook.load();
-                    let current_match_ob = match_orderbook.load();
-
-                    if let Err(e) = order_pre_builder.update_orders_on_market_data(
-                        &match_id, &goal_market_id, &match_market_id, &current_goal_ob, &current_match_ob, &prepared_orders,
-                    ) {
-                        error!("Failed to rebuild prepared orders for match {}: {}", match_id, e);
-                    } else {
-                        // Update execution engine cache with the newly prepared orders
-                        let new_prepared_orders = prepared_orders.load();
-                        execution_engine.update_prepared_orders(&match_id, new_prepared_orders.clone());
-                    }
-                },
-                _ => {
-                    debug!("Unhandled market update type for market: {}", update.market_id);
                 }
+                _ => {}
+            }
+
+            // Drain any pending updates in a burst, keeping only the latest state per market
+            while let Ok(update) = market_update_rx.try_recv() {
+                match update.update_type {
+                    crate::market_data::MarketUpdateType::OrderBookUpdate(ob) => {
+                        if ob.market_id == goal_market_id {
+                            goal_orderbook.store(Arc::new(ob));
+                        } else if ob.market_id == match_market_id {
+                            match_orderbook.store(Arc::new(ob));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Apply the latest snapshot
+            if let Some(ob) = latest_goal {
+                goal_orderbook.store(Arc::new(ob));
+            }
+            if let Some(ob) = latest_match {
+                match_orderbook.store(Arc::new(ob));
+            }
+
+            // Rebuild prepared orders once with the latest state
+            let current_goal_ob = goal_orderbook.load();
+            let current_match_ob = match_orderbook.load();
+
+            if let Err(e) = order_pre_builder.update_orders_on_market_data(
+                &match_id, &goal_market_id, &match_market_id, &current_goal_ob, &current_match_ob, &prepared_orders,
+            ) {
+                error!("Failed to rebuild prepared orders for match {}: {}", match_id, e);
+            } else {
+                let new_prepared_orders = prepared_orders.load();
+                execution_engine.update_prepared_orders(&match_id, new_prepared_orders.clone());
             }
         }
         info!("Market data handler stopped for match: {}", match_id);
@@ -188,23 +201,20 @@ impl MatchManager {
         }
     }
 
-    pub async fn add_match(&self, config: MatchConfig) -> Result<()> {
-        let (_market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
+    pub fn add_match(&self, config: MatchConfig) {
+        let (market_update_tx, market_update_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // Create the MatchEngine
-        let mut engine = MatchEngine::new(
+        let engine = MatchEngine::new(
             config.clone(),
             self.execution_engine.clone(),
             market_update_rx,
+            market_update_tx,
         );
-
-        engine.start().await?;
 
         let engine_arc = Arc::new(engine);
         self.matches.insert(config.id.clone(), engine_arc);
 
         info!("Added match: {} ({})", config.name, config.id);
-        Ok(())
     }
 
     pub fn get_match(&self, match_id: &str) -> Option<Arc<MatchEngine>> {

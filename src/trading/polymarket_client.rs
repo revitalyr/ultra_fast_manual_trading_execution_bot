@@ -4,60 +4,75 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Client;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, error, info};
+
+const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+const POOL_MAX_IDLE_PER_HOST: usize = 10;
+const HTTP_REQUEST_TIMEOUT_SECS: u64 = 5;
 
 #[derive(Debug, Clone)]
 pub struct PolymarketClient {
     client: Client,
     base_url: String,
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
 }
 
 impl PolymarketClient {
     pub fn new(base_url: String, api_key: Option<String>) -> Self {
         let client = Client::builder()
-            .pool_idle_timeout(Duration::from_secs(60))
-            .pool_max_idle_per_host(10)
-            .timeout(Duration::from_secs(5))
+            .pool_idle_timeout(Duration::from_secs(POOL_IDLE_TIMEOUT_SECS))
+            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+            .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
             .build()
             .expect("Failed to create HTTP client");
 
         Self {
             client,
             base_url,
-            api_key,
+            api_key: api_key.map(SecretString::from),
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}/api/v1/{}", self.base_url, path)
+    }
+
+    async fn check_response(&self, response: reqwest::Response, context: &str) -> Result<reqwest::Response> {
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            let error_text = response.text().await?;
+            let error_msg = format!("{}: {}", context, error_text);
+            error!("{}", error_msg);
+            Err(anyhow::anyhow!(error_msg))
         }
     }
 
     pub async fn submit_order(&self, order: &PreparedOrder) -> Result<Value> {
-        let url = format!("{}/api/v1/orders", self.base_url);
+        let url = self.url("orders");
+        
+        // Build payload with fresh timestamp at execution time
+        let payload = order.build_payload()?;
         
         let mut request = self.client
             .post(&url)
             .header("Content-Type", "application/json")
-            .body(order.payload.clone());
+            .body(payload);
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
         debug!("Submitting order to market: {}", order.market_id);
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let result: Value = response.json().await?;
-            info!("Order submitted successfully: {}", order.id);
-            debug!("Order response: {}", result);
-            Ok(result)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Order submission failed: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Order submission failed").await?;
+        let result: Value = response.json().await?;
+        info!("Order submitted successfully: {}", order.id);
+        debug!("Order response: {}", result);
+        Ok(result)
     }
 
     async fn submit_prepared_order_internal(
@@ -65,7 +80,7 @@ impl PolymarketClient {
         payload: &Bytes,
         signature: Option<&Bytes>,
     ) -> Result<Value> {
-        let url = format!("{}/api/v1/orders/submit", self.base_url);
+        let url = self.url("orders/submit");
         
         let mut request = self.client
             .post(&url)
@@ -77,113 +92,73 @@ impl PolymarketClient {
         }
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let result: Value = response.json().await?;
-            debug!("Prepared order submitted successfully");
-            Ok(result)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Prepared order submission failed: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Prepared order submission failed").await?;
+        let result: Value = response.json().await?;
+        debug!("Prepared order submitted successfully");
+        Ok(result)
     }
 
     async fn get_markets_internal(&self) -> Result<Vec<Value>> {
-        let url = format!("{}/api/v1/markets", self.base_url);
+        let url = self.url("markets");
         
         let mut request = self.client.get(&url);
         
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let markets: Vec<Value> = response.json().await?;
-            info!("Retrieved {} markets", markets.len());
-            Ok(markets)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Failed to get markets: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Failed to get markets").await?;
+        let markets: Vec<Value> = response.json().await?;
+        info!("Retrieved {} markets", markets.len());
+        Ok(markets)
     }
 
     async fn get_orderbook_internal(&self, market_id: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/markets/{}/orderbook", self.base_url, market_id);
+        let url = self.url(&format!("markets/{}/orderbook", market_id));
         
         let mut request = self.client.get(&url);
         
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let orderbook: Value = response.json().await?;
-            debug!("Retrieved orderbook for market: {}", market_id);
-            Ok(orderbook)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Failed to get orderbook: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Failed to get orderbook").await?;
+        let orderbook: Value = response.json().await?;
+        debug!("Retrieved orderbook for market: {}", market_id);
+        Ok(orderbook)
     }
 
     async fn get_balance_internal(&self) -> Result<Value> {
-        let url = format!("{}/api/v1/account/balance", self.base_url);
+        let url = self.url("account/balance");
         
         let mut request = self.client.get(&url);
         
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let balance: Value = response.json().await?;
-            debug!("Retrieved account balance");
-            Ok(balance)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Failed to get balance: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Failed to get balance").await?;
+        let balance: Value = response.json().await?;
+        debug!("Retrieved account balance");
+        Ok(balance)
     }
 
     async fn cancel_order_internal(&self, order_id: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/orders/{}/cancel", self.base_url, order_id);
+        let url = self.url(&format!("orders/{}/cancel", order_id));
         
         let mut request = self.client.post(&url);
         
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let result: Value = response.json().await?;
-            info!("Order cancelled successfully: {}", order_id);
-            Ok(result)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Failed to cancel order: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Failed to cancel order").await?;
+        let result: Value = response.json().await?;
+        info!("Order cancelled successfully: {}", order_id);
+        Ok(result)
     }
 }
 
@@ -191,32 +166,27 @@ impl PolymarketClient {
 impl TradingClient for PolymarketClient {
     async fn submit_order(&self, order: &PreparedOrder) -> Result<Value> {
         // Call the public method directly
-        let url = format!("{}/api/v1/orders", self.base_url);
+        let url = self.url("orders");
+        
+        // Build payload with fresh timestamp at execution time
+        let payload = order.build_payload()?;
         
         let mut request = self.client
             .post(&url)
             .header("Content-Type", "application/json")
-            .body(order.payload.clone());
+            .body(payload);
 
         if let Some(api_key) = &self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            request = request.header("Authorization", format!("Bearer {}", api_key.expose_secret()));
         }
 
         debug!("Submitting order to market: {}", order.market_id);
 
-        let response = request.send().await?;
-        
-        if response.status().is_success() {
-            let result: Value = response.json().await?;
-            info!("Order submitted successfully: {}", order.id);
-            debug!("Order response: {}", result);
-            Ok(result)
-        } else {
-            let error_text = response.text().await?;
-            let error_msg = format!("Order submission failed: {}", error_text);
-            error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
-        }
+        let response = self.check_response(request.send().await?, "Order submission failed").await?;
+        let result: Value = response.json().await?;
+        info!("Order submitted successfully: {}", order.id);
+        debug!("Order response: {}", result);
+        Ok(result)
     }
 
     async fn submit_prepared_order(

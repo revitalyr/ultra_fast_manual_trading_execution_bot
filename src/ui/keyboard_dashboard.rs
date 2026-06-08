@@ -10,6 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info};
 
+const MAX_DISPLAY_NAME_LEN: usize = 50;
+const TRUNCATED_NAME_LEN: usize = MAX_DISPLAY_NAME_LEN - 3;
+const KEYBOARD_POLL_INTERVAL_MS: u64 = 50;
+
 // Pure rendering logic - no business logic
 pub struct DashboardRenderer;
 
@@ -42,8 +46,8 @@ impl DashboardRenderer {
                 let shortcut = config.keyboard_shortcut.map_or(key.clone(), |c| c.to_string());
                 
                 // Truncate name if too long
-                let name = if config.name.len() > 50 {
-                    format!("{}...", &config.name[..47])
+                let name = if config.name.len() > MAX_DISPLAY_NAME_LEN {
+                    format!("{}...", &config.name[..TRUNCATED_NAME_LEN])
                 } else {
                     config.name.clone()
                 };
@@ -134,13 +138,28 @@ impl DashboardController {
 pub struct KeyboardDashboard {
     controller: DashboardController,
     current_feedback: Option<String>,
+    cached_matches: Vec<Arc<MatchConfig>>,
+}
+
+impl Drop for KeyboardDashboard {
+    fn drop(&mut self) {
+        let _ = execute!(stdout(), crossterm::cursor::Show);
+        let _ = disable_raw_mode();
+    }
 }
 
 impl KeyboardDashboard {
     pub fn new(match_manager: Arc<MatchManager>) -> Self {
+        let matches = match_manager
+            .get_all_matches()
+            .iter()
+            .map(|engine| Arc::new(engine.get_config().clone()))
+            .collect();
+        
         Self {
             controller: DashboardController::new(match_manager),
             current_feedback: None,
+            cached_matches: matches,
         }
     }
 
@@ -154,10 +173,9 @@ impl KeyboardDashboard {
 
         loop {
             // Handle keyboard input
-            if event::poll(Duration::from_millis(50))? {
+            if event::poll(Duration::from_millis(KEYBOARD_POLL_INTERVAL_MS))? {
                 if let Event::Key(key) = event::read()? {
-                    let matches = self.get_match_configs();
-                    if let Some(action) = InputHandler::handle_key_event(key, &matches) {
+                    if let Some(action) = InputHandler::handle_key_event(key, &self.cached_matches) {
                         match action {
                             DashboardAction::ExecuteMatch(match_id) => {
                                 self.handle_execute_match(match_id).await?;
@@ -177,22 +195,11 @@ impl KeyboardDashboard {
     }
 
     fn render_initial(&self) -> Result<()> {
-        let matches = self.get_match_configs();
-        DashboardRenderer::render_dashboard(&matches, &self.current_feedback)
+        DashboardRenderer::render_dashboard(&self.cached_matches, &self.current_feedback)
     }
 
     fn render(&self) -> Result<()> {
-        let matches = self.get_match_configs();
-        DashboardRenderer::render_dashboard(&matches, &self.current_feedback)
-    }
-
-    fn get_match_configs(&self) -> Vec<Arc<MatchConfig>> {
-        self.controller
-            .match_manager
-            .get_all_matches()
-            .iter()
-            .map(|engine| Arc::new(engine.get_config().clone()))
-            .collect()
+        DashboardRenderer::render_dashboard(&self.cached_matches, &self.current_feedback)
     }
 
     async fn handle_execute_match(&mut self, match_id: String) -> Result<()> {

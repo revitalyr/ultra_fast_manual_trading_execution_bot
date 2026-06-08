@@ -35,5 +35,5 @@ pub trait ExecutionEngine: Send + Sync {
     
     async fn execute_match(&self, match_id: &str) -> Result<()>;
     
-    fn get_execution_sender(&self) -> mpsc::UnboundedSender<crate::execution::prepared_orders::ExecutionRequest>;
+    fn get_execution_sender(&self) -> mpsc::Sender<crate::execution::prepared_orders::ExecutionRequest>;
 }

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+const F64_SIGN_BIT: u64 = 0x8000_0000_0000_0000;
+const F64_CLEAR_SIGN_BIT: u64 = 0x7FFF_FFFF_FFFF_FFFF;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceLevel {
     pub price: f64,
@@ -29,10 +32,10 @@ impl OrderedFloat {
         let bits = value.to_bits();
         // Flip sign bit for correct ordering: negative values become larger unsigned
         // This makes -inf (0xFFF...) the largest, +inf (0x7FF...) the smallest positive
-        OrderedFloat(if bits & 0x8000_0000_0000_0000 != 0 {
+        OrderedFloat(if bits & F64_SIGN_BIT != 0 {
             !bits // Negative: invert all bits
         } else {
-            bits | 0x8000_0000_0000_0000 // Positive: set sign bit
+            bits | F64_SIGN_BIT // Positive: set sign bit
         })
     }
 }
@@ -41,8 +44,8 @@ impl From<OrderedFloat> for f64 {
     fn from(ordered: OrderedFloat) -> Self {
         let bits = ordered.0;
         // Reverse the transformation
-        let original_bits = if bits & 0x8000_0000_0000_0000 != 0 {
-            bits & 0x7FFF_FFFF_FFFF_FFFF // Positive: clear sign bit
+        let original_bits = if bits & F64_SIGN_BIT != 0 {
+            bits & F64_CLEAR_SIGN_BIT // Positive: clear sign bit
         } else {
             !bits // Negative: invert all bits back
         };
@@ -56,10 +59,7 @@ impl OrderBook {
             market_id,
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
-            updated_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
+            updated_at: crate::util::now_millis(),
         }
     }
 
@@ -90,16 +90,13 @@ impl OrderBook {
     }
 
     fn touch(&mut self) {
-        self.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        self.updated_at = crate::util::now_millis();
     }
 
     #[allow(dead_code)] // Used by OrderPreBuilder
     pub fn get_best_bid(&self) -> Option<PriceLevel> {
         self.bids
-            .first_key_value()
+            .last_key_value()
             .map(|(key, &size)| PriceLevel {
                 price: (*key).into(),
                 size,
@@ -215,5 +212,170 @@ impl Market {
             outcome_type,
             is_active: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_bid_insert_new() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        let bid = ob.get_best_bid().unwrap();
+        assert_eq!(bid.price, 100.0);
+        assert_eq!(bid.size, 10.0);
+    }
+
+    #[test]
+    fn test_update_bid_overwrite_same_price() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        ob.update_bid(100.0, 25.0);
+        let bid = ob.get_best_bid().unwrap();
+        assert_eq!(bid.price, 100.0);
+        assert_eq!(bid.size, 25.0);
+        assert_eq!(ob.bids.len(), 1);
+    }
+
+    #[test]
+    fn test_update_bid_remove_with_zero() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        ob.update_bid(100.0, 0.0);
+        assert!(ob.get_best_bid().is_none());
+        assert!(ob.bids.is_empty());
+    }
+
+    #[test]
+    fn test_update_bid_remove_with_negative() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        ob.update_bid(100.0, -1.0);
+        assert!(ob.get_best_bid().is_none());
+    }
+
+    #[test]
+    fn test_update_bid_descending_order() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(99.0, 5.0);
+        ob.update_bid(101.0, 8.0);
+        ob.update_bid(100.0, 3.0);
+        let best = ob.get_best_bid().unwrap();
+        assert_eq!(best.price, 101.0);
+        assert_eq!(best.size, 8.0);
+    }
+
+    #[test]
+    fn test_update_bid_multiple_levels() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        ob.update_bid(99.0, 5.0);
+        ob.update_bid(98.0, 2.0);
+        assert_eq!(ob.bids.len(), 3);
+        assert_eq!(ob.get_best_bid().unwrap().price, 100.0);
+    }
+
+    #[test]
+    fn test_update_ask_insert_new() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(100.0, 10.0);
+        let ask = ob.get_best_ask().unwrap();
+        assert_eq!(ask.price, 100.0);
+        assert_eq!(ask.size, 10.0);
+    }
+
+    #[test]
+    fn test_update_ask_overwrite_same_price() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(100.0, 10.0);
+        ob.update_ask(100.0, 30.0);
+        let ask = ob.get_best_ask().unwrap();
+        assert_eq!(ask.price, 100.0);
+        assert_eq!(ask.size, 30.0);
+        assert_eq!(ob.asks.len(), 1);
+    }
+
+    #[test]
+    fn test_update_ask_remove_with_zero() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(100.0, 10.0);
+        ob.update_ask(100.0, 0.0);
+        assert!(ob.get_best_ask().is_none());
+        assert!(ob.asks.is_empty());
+    }
+
+    #[test]
+    fn test_update_ask_ascending_order() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(102.0, 5.0);
+        ob.update_ask(100.0, 8.0);
+        ob.update_ask(101.0, 3.0);
+        let best = ob.get_best_ask().unwrap();
+        assert_eq!(best.price, 100.0);
+        assert_eq!(best.size, 8.0);
+    }
+
+    #[test]
+    fn test_update_ask_multiple_levels() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(100.0, 10.0);
+        ob.update_ask(101.0, 5.0);
+        ob.update_ask(102.0, 2.0);
+        assert_eq!(ob.asks.len(), 3);
+        assert_eq!(ob.get_best_ask().unwrap().price, 100.0);
+    }
+
+    #[test]
+    fn test_update_bid_updates_timestamp() {
+        let mut ob = OrderBook::new("test".to_string());
+        let ts = ob.updated_at;
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        ob.update_bid(100.0, 10.0);
+        assert!(ob.updated_at > ts);
+    }
+
+    #[test]
+    fn test_update_ask_updates_timestamp() {
+        let mut ob = OrderBook::new("test".to_string());
+        let ts = ob.updated_at;
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        ob.update_ask(100.0, 10.0);
+        assert!(ob.updated_at > ts);
+    }
+
+    #[test]
+    fn test_bid_ask_independent() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 10.0);
+        ob.update_ask(101.0, 5.0);
+        assert_eq!(ob.bids.len(), 1);
+        assert_eq!(ob.asks.len(), 1);
+        assert_eq!(ob.get_best_bid().unwrap().price, 100.0);
+        assert_eq!(ob.get_best_ask().unwrap().price, 101.0);
+    }
+
+    #[test]
+    fn test_update_bid_remove_nonexistent() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(100.0, 0.0);
+        assert!(ob.bids.is_empty());
+    }
+
+    #[test]
+    fn test_update_ask_remove_nonexistent() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_ask(100.0, 0.0);
+        assert!(ob.asks.is_empty());
+    }
+
+    #[test]
+    fn test_negative_zero_bid_price() {
+        let mut ob = OrderBook::new("test".to_string());
+        ob.update_bid(-0.0, 10.0);
+        ob.update_bid(0.0, 5.0);
+        // -0.0 sorts below 0.0 in IEEE 754 total order after OrderedFloat transformation
+        assert_eq!(ob.bids.len(), 2);
     }
 }

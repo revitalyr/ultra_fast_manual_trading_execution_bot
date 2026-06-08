@@ -2,7 +2,6 @@ use crate::execution::prepared_orders::{PreparedOrder, PreparedOrders};
 use crate::market_data::{OrderBook, OrderSide, OrderType};
 use anyhow::Result;
 use arc_swap::ArcSwap;
-use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -56,25 +55,12 @@ impl OrderPreBuilder {
             return Err(anyhow::anyhow!("No liquidity available in goal market"));
         }
 
-        // Build market order payload
-        let payload = json!({
-            "marketId": market_id,
-            "type": "market",
-            "side": "buy",
-            "size": total_liquidity,
-            "timestamp": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        });
-
-        let order = PreparedOrder::new(
+        let order = PreparedOrder::with_params(
             market_id.to_string(),
             OrderType::Market,
             OrderSide::Buy,
             total_liquidity,
             None,
-            bytes::Bytes::from(payload.to_string()),
         );
 
         Ok(order)
@@ -96,26 +82,12 @@ impl OrderPreBuilder {
             return Err(anyhow::anyhow!("No liquidity available within price limit"));
         }
 
-        // Build limit order payload
-        let payload = json!({
-            "marketId": market_id,
-            "type": "limit",
-            "side": "buy",
-            "size": order_size,
-            "price": best_price,
-            "timestamp": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        });
-
-        let order = PreparedOrder::new(
+        let order = PreparedOrder::with_params(
             market_id.to_string(),
             OrderType::Limit { price: best_price },
             OrderSide::Buy,
             order_size,
             Some(best_price),
-            bytes::Bytes::from(payload.to_string()),
         );
 
         Ok(order)

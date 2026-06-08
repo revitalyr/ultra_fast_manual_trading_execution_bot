@@ -5,6 +5,7 @@ mod match_engine;
 mod ui;
 mod config;
 mod traits;
+mod util;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -52,7 +53,7 @@ async fn main() -> Result<()> {
         });
 
     // Configure matches from config
-    configure_matches_from_config(&match_manager, &config).await?;
+    configure_matches_from_config(&match_manager, &config);
 
     // Start all match engines
     match_manager.start_all().await?;
@@ -73,17 +74,16 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn configure_matches_from_config(match_manager: &Arc<MatchManager>, config: &Config) -> Result<()> {
+fn configure_matches_from_config(match_manager: &Arc<MatchManager>, config: &Config) {
     let match_configs = config.get_match_configs();
     
     for match_config in match_configs {
         let match_name = match_config.name.clone();
-        match_manager.add_match(match_config).await?;
+        match_manager.add_match(match_config);
         info!("Match configured: {}", match_name);
     }
 
     info!("All matches configured successfully");
-    Ok(())
 }
 
 fn create_default_config() -> Config {
@@ -125,13 +125,13 @@ mod tests {
     async fn test_execution_engine_creation() {
         let client = Arc::new(PolymarketClient::new("test_url".to_string(), None));
         let engine = ExecutionEngine::new(client);
-        // UnboundedSender doesn't have capacity() method, so just check it's not None
+        // Bounded sender has async send with backpressure
         let result = engine.get_execution_sender().send(ExecutionRequest::new(
             "test".to_string(), 
             Arc::new(crate::execution::prepared_orders::PreparedOrders::new(
                 "test".to_string(),
-                Default::default(),
-                Default::default(),
+                PreparedOrder::placeholder(),
+                PreparedOrder::placeholder(),
             ))
         )).await;
         assert!(result.is_ok());

@@ -54,6 +54,9 @@ futures = "0.3"
 fastrand = "2.1"
 async-trait = "0.1"
 
+# Secrets management
+secrecy = { version = "0.10", features = ["serde"] }
+
 # Optional web UI
 # axum = "0.8"
 # tower = "0.5"

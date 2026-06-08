@@ -54,6 +54,7 @@ pub mod match_engine;
 pub mod trading;
 pub mod traits;
 pub mod ui;
+pub mod util;
 
 // Re-export commonly used types
 pub use execution::{ExecutionEngine, PreparedOrder, PreparedOrders, ExecutionRequest, ExecutionResult};

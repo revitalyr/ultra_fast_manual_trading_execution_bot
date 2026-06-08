@@ -7,6 +7,10 @@ use ultra_fast_manual_trading_execution_bot::match_engine::{MatchManager, MatchC
 use ultra_fast_manual_trading_execution_bot::market_data::{OrderBook, MarketUpdate, MarketUpdateType, OrderSide, OrderType};
 use ultra_fast_manual_trading_execution_bot::trading::PolymarketClient;
 
+const SIMULATED_LATENCY_US: u64 = 500;
+const PARALLEL_REQUEST_COUNT: usize = 5;
+const BENCHMARK_ITERATIONS: usize = 10_000;
+
 #[tokio::test]
 async fn test_ultra_fast_execution_flow() -> Result<()> {
     println!("🚀 Testing ultra-fast execution flow...");
@@ -32,40 +36,26 @@ async fn test_ultra_fast_execution_flow() -> Result<()> {
     
     // Setup match manager
     let match_manager = MatchManager::new(execution_engine.clone());
-    match_manager.add_match(match_config)?;
+    match_manager.add_match(match_config);
     
     println!("✅ Match manager configured successfully");
     
     // Create demo prepared orders
-    let goal_order = PreparedOrder {
-        id: uuid::Uuid::new_v4(),
-        market_id: "goal_arsenal_chelsea".to_string(),
-        order_type: OrderType::Market,
-        side: OrderSide::Buy,
-        size: 100.0,
-        price: None,
-        payload: bytes::Bytes::from("goal_market_order_payload"),
-        signature: Some(bytes::Bytes::from(hex::encode("demo_signature_goal"))),
-        created_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64,
-    };
+    let goal_order = PreparedOrder::with_params(
+        "goal_arsenal_chelsea".to_string(),
+        OrderType::Market,
+        OrderSide::Buy,
+        100.0,
+        None,
+    );
     
-    let match_order = PreparedOrder {
-        id: uuid::Uuid::new_v4(),
-        market_id: "match_arsenal_chelsea".to_string(),
-        order_type: OrderType::Limit { price: 0.85 },
-        side: OrderSide::Buy,
-        size: 50.0,
-        price: Some(0.85),
-        payload: bytes::Bytes::from("match_result_order_payload"),
-        signature: Some(bytes::Bytes::from(hex::encode("demo_signature_match"))),
-        created_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64,
-    };
+    let match_order = PreparedOrder::with_params(
+        "match_arsenal_chelsea".to_string(),
+        OrderType::Limit { price: 0.85 },
+        OrderSide::Buy,
+        50.0,
+        Some(0.85),
+    );
     
     let prepared_orders = PreparedOrders::new(
         "arsenal_chelsea".to_string(),
@@ -78,9 +68,9 @@ async fn test_ultra_fast_execution_flow() -> Result<()> {
         Arc::new(prepared_orders)
     );
     
-    // Test execution sender
+    // Test execution sender (use try_send for non-blocking in test)
     let sender = execution_engine.get_execution_sender();
-    let send_result = sender.send(execution_request);
+    let send_result = sender.try_send(execution_request);
     assert!(send_result.is_ok(), "Failed to send execution request");
     
     println!("✅ Execution request sent successfully");
@@ -89,7 +79,7 @@ async fn test_ultra_fast_execution_flow() -> Result<()> {
     let start_time = std::time::Instant::now();
     
     // Simulate ultra-fast execution
-    tokio::time::sleep(Duration::from_micros(500)).await; // 0.5ms simulation
+    tokio::time::sleep(Duration::from_micros(SIMULATED_LATENCY_US)).await; // 0.5ms simulation
     
     let elapsed = start_time.elapsed();
     println!("⚡ Execution latency: {:?}", elapsed);
@@ -117,10 +107,7 @@ async fn test_market_data_processing() -> Result<()> {
     let market_update = MarketUpdate {
         market_id: "test_market".to_string(),
         update_type: MarketUpdateType::OrderBookUpdate(orderbook.clone()),
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64,
+        timestamp: ultra_fast_manual_trading_execution_bot::util::now_millis(),
     };
     
     // Test market update processing
@@ -149,11 +136,11 @@ async fn test_parallel_order_submission() -> Result<()> {
     let execution_engine = Arc::new(ExecutionEngine::new(client));
     
     // Create multiple execution requests
-    let requests: Vec<_> = (0..5).map(|i| {
+    let requests: Vec<_> = (0..PARALLEL_REQUEST_COUNT).map(|i| {
         let prepared_orders = PreparedOrders::new(
             format!("test_match_{}", i),
-            PreparedOrder::default(),
-            PreparedOrder::default(),
+            PreparedOrder::placeholder(),
+            PreparedOrder::placeholder(),
         );
         
         ExecutionRequest::new(
@@ -168,7 +155,7 @@ async fn test_parallel_order_submission() -> Result<()> {
     let handles: Vec<_> = requests.into_iter().map(|req| {
         let sender = execution_engine.get_execution_sender();
         tokio::spawn(async move {
-            sender.send(req)
+            sender.try_send(req)
         })
     }).collect();
     
@@ -207,7 +194,7 @@ async fn test_lock_free_performance() -> Result<()> {
     let start_time = std::time::Instant::now();
     
     // Perform many swaps
-    for i in 0..10000 {
+    for i in 0..BENCHMARK_ITERATIONS {
         data.store(Arc::new(i));
     }
     
@@ -219,7 +206,7 @@ async fn test_lock_free_performance() -> Result<()> {
     let start_time = std::time::Instant::now();
     
     // Perform many inserts
-    for i in 0..10000 {
+    for i in 0..BENCHMARK_ITERATIONS {
         map.insert(i, i * 2);
     }
     

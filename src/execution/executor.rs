@@ -9,16 +9,18 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tracing::{error, info};
 
+const EXECUTION_QUEUE_CAPACITY: usize = 1000;
+
 #[derive(Debug)]
 pub struct ExecutionEngine {
     trading_client: Arc<PolymarketClient>,
     prepared_orders_cache: Arc<DashMap<String, Arc<ArcSwap<PreparedOrders>>>>,
-    execution_tx: mpsc::UnboundedSender<ExecutionRequest>,
+    execution_tx: mpsc::Sender<ExecutionRequest>,
 }
 
 impl ExecutionEngine {
     pub fn new(trading_client: Arc<PolymarketClient>) -> Self {
-        let (execution_tx, execution_rx) = mpsc::unbounded_channel();
+        let (execution_tx, execution_rx) = mpsc::channel(EXECUTION_QUEUE_CAPACITY);
         let prepared_orders_cache = Arc::new(DashMap::new());
         
         let engine = Self {
@@ -38,28 +40,25 @@ impl ExecutionEngine {
     }
 
     #[allow(dead_code)] // Used in examples/demo.rs, but not directly in lib.rs or main.rs
-    pub fn get_execution_sender(&self) -> mpsc::UnboundedSender<ExecutionRequest> {
+    pub fn get_execution_sender(&self) -> mpsc::Sender<ExecutionRequest> {
         self.execution_tx.clone()
     }
 
     pub fn update_prepared_orders(&self, match_id: &str, orders: Arc<crate::execution::prepared_orders::PreparedOrders>) {
-        if let Some(swap) = self.prepared_orders_cache.get(match_id) {
-            // Hot path: update existing atomic pointer
-            swap.store(orders);
-        } else {
-            // Cold path: initialize cache entry
-            self.prepared_orders_cache.insert(match_id.to_string(), Arc::new(ArcSwap::new(orders)));
-        }
+        self.prepared_orders_cache
+            .entry(match_id.to_string())
+            .and_modify(|swap| swap.store(orders.clone()))
+            .or_insert_with(|| Arc::new(ArcSwap::new(orders)));
     }
 
     pub async fn execute_match(&self, match_id: &str) -> Result<()> {
         if let Some(swap_arc) = self.prepared_orders_cache.get(match_id) {
             let orders = swap_arc.load();
-            let request = ExecutionRequest::new(match_id.to_string(), Arc::new(orders.as_ref().clone()));
+            let request = ExecutionRequest::new(match_id.to_string(), Arc::clone(&orders));
             
-            if let Err(e) = self.execution_tx.send(request) {
-                error!("Failed to send execution request: {}", e);
-                return Err(anyhow::anyhow!("Failed to queue execution"));
+            if let Err(e) = self.execution_tx.try_send(request) {
+                error!("Execution queue full, dropping request: {}", e);
+                return Err(anyhow::anyhow!("Execution queue full, try again later"));
             }
             
             info!("Execution request queued for match: {}", match_id);
@@ -72,7 +71,7 @@ impl ExecutionEngine {
     }
 
     async fn execution_handler(
-        mut execution_rx: mpsc::UnboundedReceiver<ExecutionRequest>,
+        mut execution_rx: mpsc::Receiver<ExecutionRequest>,
         trading_client: Arc<PolymarketClient>,
         _prepared_orders_cache: Arc<DashMap<String, Arc<ArcSwap<PreparedOrders>>>>,
     ) {
@@ -154,7 +153,7 @@ impl ExecutionEngineTrait for ExecutionEngine {
         self.execute_match(match_id).await
     }
 
-    fn get_execution_sender(&self) -> mpsc::UnboundedSender<ExecutionRequest> {
+    fn get_execution_sender(&self) -> mpsc::Sender<ExecutionRequest> {
         self.get_execution_sender()
     }
 }

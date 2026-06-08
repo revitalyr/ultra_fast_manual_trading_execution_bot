@@ -9,6 +9,12 @@ use ultra_fast_manual_trading_execution_bot::match_engine::{MatchManager, MatchC
 use ultra_fast_manual_trading_execution_bot::market_data::{OrderBook, MarketUpdate, MarketUpdateType, OrderSide, OrderType};
 use ultra_fast_manual_trading_execution_bot::trading::PolymarketClient;
 
+const SUB_MS_THRESHOLD_US: u128 = 1000;
+const LOW_LATENCY_THRESHOLD_MS: u128 = 2;
+const PARALLEL_PERF_THRESHOLD_MS: u128 = 5;
+const DEMO_POLL_INTERVAL_MS: u64 = 100;
+const DEMO_STEP_DELAY_SECS: u64 = 1;
+
 /// Demo application showcasing the ultra-fast trading bot capabilities
 pub struct TradingBotDemo {
     execution_engine: Arc<ExecutionEngine>,
@@ -39,7 +45,7 @@ impl TradingBotDemo {
         })
     }
     
-    pub async fn configure_demo_matches(&self) -> Result<()> {
+    pub fn configure_demo_matches(&self) {
         println!("⚙️  Configuring demo matches...");
         
         // Demo match 1: Arsenal vs Chelsea
@@ -73,13 +79,11 @@ impl TradingBotDemo {
         );
         
         // Add matches to manager
-        self.match_manager.add_match(match1)?;
-        self.match_manager.add_match(match2)?;
-        self.match_manager.add_match(match3)?;
+        self.match_manager.add_match(match1);
+        self.match_manager.add_match(match2);
+        self.match_manager.add_match(match3);
         
         println!("✅ {} demo matches configured", 3);
-        
-        Ok(())
     }
     
     pub async fn simulate_market_data(&self) -> Result<()> {
@@ -106,10 +110,7 @@ impl TradingBotDemo {
                 price: None,
                 payload: bytes::Bytes::from("goal_market_order_payload"),
                 signature: Some(bytes::Bytes::from(hex::encode("demo_signature_goal"))),
-                created_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64,
+                created_at: ultra_fast_manual_trading_execution_bot::util::now_millis(),
             },
             // Match result order (limit order)
             PreparedOrder {
@@ -121,10 +122,7 @@ impl TradingBotDemo {
                 price: Some(0.85),
                 payload: bytes::Bytes::from("match_result_order_payload"),
                 signature: Some(bytes::Bytes::from(hex::encode("demo_signature_match"))),
-                created_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64,
+                created_at: ultra_fast_manual_trading_execution_bot::util::now_millis(),
             },
         );
         
@@ -137,9 +135,9 @@ impl TradingBotDemo {
             Arc::new(prepared_orders)
         );
         
-        // Send to execution engine
+        // Send to execution engine (non-blocking try_send for bounded channel)
         let sender = self.execution_engine.get_execution_sender();
-        let send_result = sender.send(execution_request);
+        let send_result = sender.try_send(execution_request);
         
         let execution_time = start_time.elapsed();
         
@@ -147,16 +145,16 @@ impl TradingBotDemo {
             Ok(_) => {
                 println!("⚡ Execution completed in {:?}", execution_time);
                 
-                if execution_time.as_micros() < 1000 {
+                if execution_time.as_micros() < SUB_MS_THRESHOLD_US {
                     println!("🎯 SUB-MILLISECOND EXECUTION ACHIEVED!");
-                } else if execution_time.as_millis() < 2 {
+                } else if execution_time.as_millis() < LOW_LATENCY_THRESHOLD_MS {
                     println!("✅ Ultra-low latency execution (< 2ms)");
                 } else {
                     warn!("⚠️  Execution latency above target: {:?}", execution_time);
                 }
             }
             Err(e) => {
-                warn!("Failed to execute: {:?}", e);
+                warn!("Failed to execute (queue full?): {:?}", e);
             }
         }
         
@@ -176,8 +174,8 @@ impl TradingBotDemo {
             tokio::spawn(async move {
                 let prepared_orders = PreparedOrders::new(
                     match_id.to_string(),
-                    PreparedOrder::default(),
-                    PreparedOrder::default(),
+                    PreparedOrder::placeholder(),
+                    PreparedOrder::placeholder(),
                 );
                 
                 let request = ExecutionRequest::new(
@@ -186,7 +184,7 @@ impl TradingBotDemo {
                 );
                 
                 let sender = execution_engine.get_execution_sender();
-                sender.send(request)
+                sender.try_send(request)
             })
         }).collect();
         
@@ -212,7 +210,7 @@ impl TradingBotDemo {
         println!("⚡ Parallel execution completed in {:?}", total_time);
         println!("📊 {}/{} matches executed successfully", successful, total_count);
         
-        if total_time.as_millis() < 5 {
+        if total_time.as_millis() < PARALLEL_PERF_THRESHOLD_MS {
             println!("🚀 EXCELLENT parallel performance!");
         }
         
@@ -238,7 +236,7 @@ impl TradingBotDemo {
             use std::time::Duration;
             
             loop {
-                if event::poll(Duration::from_millis(100)).unwrap() {
+                if event::poll(Duration::from_millis(DEMO_POLL_INTERVAL_MS)).unwrap() {
                     if let event::Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
                         match code {
                             KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') |
@@ -291,20 +289,20 @@ impl TradingBotDemo {
         println!("=====================================");
         
         // Step 1: Configure matches
-        self.configure_demo_matches().await?;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        self.configure_demo_matches();
+        tokio::time::sleep(Duration::from_secs(DEMO_STEP_DELAY_SECS)).await;
         
         // Step 2: Simulate market data
         self.simulate_market_data().await?;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(DEMO_STEP_DELAY_SECS)).await;
         
         // Step 3: Demonstrate ultra-fast execution
         self.demonstrate_ultra_fast_execution().await?;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(DEMO_STEP_DELAY_SECS)).await;
         
         // Step 4: Demonstrate parallel execution
         self.demonstrate_parallel_execution().await?;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(DEMO_STEP_DELAY_SECS)).await;
         
         // Step 5: Interactive demo
         self.run_interactive_demo().await?;
