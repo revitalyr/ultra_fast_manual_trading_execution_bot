@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use ultra_fast_manual_trading_execution_bot::execution::{ExecutionEngine, PreparedOrder, PreparedOrders, ExecutionRequest};
 use ultra_fast_manual_trading_execution_bot::match_engine::{MatchManager, MatchConfig};
 use ultra_fast_manual_trading_execution_bot::market_data::{OrderBook, MarketUpdate, MarketUpdateType, OrderSide, OrderType};
@@ -96,12 +95,10 @@ async fn test_ultra_fast_execution_flow() -> Result<()> {
 async fn test_market_data_processing() -> Result<()> {
     println!("📊 Testing market data processing...");
     
-    // Create test orderbook
+    // Create test orderbook with data
     let mut orderbook = OrderBook::new("test_market".to_string());
-    
-    // Add some test data
-    // Note: OrderBook doesn't have update_bid/update_ask methods in current implementation
-    // This would need to be implemented based on actual OrderBook API
+    orderbook.update_bid(99.5, 10.0);
+    orderbook.update_ask(100.5, 5.0);
     
     // Create market update
     let market_update = MarketUpdate {

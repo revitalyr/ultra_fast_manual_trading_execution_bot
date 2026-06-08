@@ -126,12 +126,12 @@ mod tests {
         let client = Arc::new(PolymarketClient::new("test_url".to_string(), None));
         let engine = ExecutionEngine::new(client);
         // Bounded sender has async send with backpressure
-        let result = engine.get_execution_sender().send(ExecutionRequest::new(
+        let result = engine.get_execution_sender().send(crate::execution::ExecutionRequest::new(
             "test".to_string(), 
-            Arc::new(crate::execution::prepared_orders::PreparedOrders::new(
+            Arc::new(crate::execution::PreparedOrders::new(
                 "test".to_string(),
-                PreparedOrder::placeholder(),
-                PreparedOrder::placeholder(),
+                crate::execution::PreparedOrder::placeholder(),
+                crate::execution::PreparedOrder::placeholder(),
             ))
         )).await;
         assert!(result.is_ok());
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_match_config_creation() {
-        let config = MatchConfig::new(
+        let config = crate::match_engine::MatchConfig::new(
             "test".to_string(),
             "Test Match".to_string(),
             "goal_test".to_string(),
