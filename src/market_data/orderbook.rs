@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 const F64_SIGN_BIT: u64 = 0x8000_0000_0000_0000;
@@ -159,6 +160,38 @@ pub enum MarketUpdateType {
     OrderBookUpdate(OrderBook),
     Trade(Trade),
     LiquidityUpdate(LiquidityUpdate),
+}
+
+/// Parses a WebSocket JSON message into a MarketUpdate.
+/// Expected JSON format:
+/// ```json
+/// {
+///     "channel": "orderbook",
+///     "data": { ... orderbook fields ... },
+///     "timestamp": 1234567890
+/// }
+/// ```
+/// Returns `None` for unknown channels, missing fields, or malformed JSON.
+pub fn parse_ws_message(message: &str) -> Option<MarketUpdate> {
+    let value: Value = serde_json::from_str(message).ok()?;
+    let channel = value.get("channel")?.as_str()?;
+    let data = value.get("data")?;
+    let timestamp = value
+        .get("timestamp")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(crate::util::now_millis);
+
+    match channel {
+        "orderbook" => {
+            let orderbook: OrderBook = serde_json::from_value(data.clone()).ok()?;
+            Some(MarketUpdate {
+                market_id: orderbook.market_id.clone(),
+                update_type: MarketUpdateType::OrderBookUpdate(orderbook),
+                timestamp,
+            })
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,5 +410,115 @@ mod tests {
         ob.update_bid(0.0, 5.0);
         // -0.0 sorts below 0.0 in IEEE 754 total order after OrderedFloat transformation
         assert_eq!(ob.bids.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_ws_message_orderbook_valid() {
+        let mut ob = OrderBook::new("mkt_ws".to_string());
+        ob.update_ask(100.0, 10.0);
+        ob.update_bid(99.0, 5.0);
+
+        let msg = serde_json::json!({
+            "channel": "orderbook",
+            "data": ob,
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_some());
+        let update = result.unwrap();
+        assert_eq!(update.market_id, "mkt_ws");
+        match update.update_type {
+            MarketUpdateType::OrderBookUpdate(parsed_ob) => {
+                assert_eq!(parsed_ob.get_best_ask().unwrap().price, 100.0);
+                assert_eq!(parsed_ob.get_best_ask().unwrap().size, 10.0);
+                assert_eq!(parsed_ob.get_best_bid().unwrap().price, 99.0);
+                assert_eq!(parsed_ob.get_best_bid().unwrap().size, 5.0);
+            }
+            _ => panic!("Expected OrderBookUpdate"),
+        }
+        assert_eq!(update.timestamp, 1000);
+    }
+
+    #[test]
+    fn test_parse_ws_message_orderbook_missing_timestamp() {
+        let ob = OrderBook::new("mkt".to_string());
+        let msg = serde_json::json!({
+            "channel": "orderbook",
+            "data": ob,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_ws_message_unknown_channel() {
+        let msg = serde_json::json!({
+            "channel": "trades",
+            "data": {},
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_missing_channel() {
+        let msg = serde_json::json!({
+            "data": {},
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_invalid_json() {
+        let result = parse_ws_message("not valid json");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_empty_string() {
+        let result = parse_ws_message("");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_missing_data() {
+        let msg = serde_json::json!({
+            "channel": "orderbook",
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_invalid_data() {
+        let msg = serde_json::json!({
+            "channel": "orderbook",
+            "data": "not_an_orderbook",
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ws_message_channel_not_a_string() {
+        let msg = serde_json::json!({
+            "channel": 42,
+            "data": {},
+            "timestamp": 1000,
+        });
+
+        let result = parse_ws_message(&msg.to_string());
+        assert!(result.is_none());
     }
 }
