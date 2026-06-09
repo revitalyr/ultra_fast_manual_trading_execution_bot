@@ -16,6 +16,7 @@
 //! # Quick Start
 //!
 //! ```rust,no_run
+//! use std::sync::Arc;
 //! use ultra_fast_manual_trading_execution_bot::*;
 //!
 //! #[tokio::main]
@@ -26,8 +27,8 @@
 //!         Some("api_key".to_string())
 //!     ));
 //!     let execution_engine = Arc::new(ExecutionEngine::new(client));
-//!     let match_manager = MatchManager::new(execution_engine);
-//!     
+//!     let match_manager = Arc::new(MatchManager::new(execution_engine));
+//!
 //!     // Configure matches
 //!     let match_config = MatchConfig::new(
 //!         "match_1".to_string(),
@@ -37,12 +38,12 @@
 //!         0.95,
 //!         Some('1')
 //!     );
-//!     match_manager.add_match(match_config)?;
-//!     
+//!     match_manager.add_match(match_config);
+//!
 //!     // Start trading dashboard
 //!     let mut dashboard = KeyboardDashboard::new(match_manager);
 //!     dashboard.run().await?;
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
