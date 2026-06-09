@@ -217,33 +217,6 @@ pub enum OrderType {
     Limit { price: f64 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Market {
-    pub id: String,
-    pub name: String,
-    pub question: String,
-    pub outcome_type: OutcomeType,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OutcomeType {
-    Binary,                   // YES/NO
-    Categorical(Vec<String>), // Multiple outcomes
-}
-
-impl Market {
-    pub fn new(id: String, name: String, question: String, outcome_type: OutcomeType) -> Self {
-        Self {
-            id,
-            name,
-            question,
-            outcome_type,
-            is_active: true,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

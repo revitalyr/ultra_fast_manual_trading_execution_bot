@@ -18,26 +18,6 @@ pub struct PreparedOrder {
 }
 
 impl PreparedOrder {
-    pub fn new(
-        market_id: String,
-        order_type: OrderType,
-        side: OrderSide,
-        size: f64,
-        price: Option<f64>,
-        _payload: Bytes,
-    ) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            market_id,
-            order_type,
-            side,
-            size,
-            price,
-            signature: None,
-            created_at: crate::util::now_millis(),
-        }
-    }
-
     /// Creates a new PreparedOrder with order parameters. Payload is generated at execution time.
     pub fn with_params(
         market_id: String,
@@ -56,12 +36,6 @@ impl PreparedOrder {
             signature: None,
             created_at: crate::util::now_millis(),
         }
-    }
-
-    #[allow(dead_code)] // This method is a builder helper but not used in the current demo flow
-    pub fn with_signature(mut self, signature: Bytes) -> Self {
-        self.signature = Some(signature);
-        self
     }
 
     /// Creates a placeholder order for initialization. Not a valid order for execution.
