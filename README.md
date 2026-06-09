@@ -55,7 +55,6 @@ The bot follows a 3-layer, low-latency pipeline optimized for sub-millisecond ex
              │ (Zero-allocation    │
              │   dispatch)         │
              └───────┬─────────────┘
-                     │
        ┌─────────────┴─────────────┐
        ▼                           ▼
       Goal Market Order Match Result Order
@@ -67,92 +66,192 @@ The bot follows a 3-layer, low-latency pipeline optimized for sub-millisecond ex
 
 **Legend / Notes:**
 
-- **Market Data Layer**: Receives live orderbook updates via WebSocket. Lock-free data structures ensure zero contention.  
-- **Order Preparation**: Orders are continuously rebuilt and pre-signed in memory. No computation occurs on trigger.  
-- **Execution Fast Path**: Keypress triggers parallel network dispatch of goal + match orders. Latency < 2 ms.  
-- **Parallel Order Dispatch**: tokio::join! used for simultaneous order submission.  
-- **Lock-Free / Zero-Allocation**: ArcSwap + DashMap store prepared orders for instantaneous access.  
+- **Market Data Layer**: Receives live orderbook updates via WebSocket. Lock-free data structures ensure zero contention.
+- **Order Preparation**: Orders are continuously rebuilt and pre-signed in memory. No computation occurs on trigger.
+- **Execution Fast Path**: Keypress triggers parallel network dispatch of goal + match orders. Latency < 2 ms.
+- **Parallel Order Dispatch**: tokio::join! used for simultaneous order submission.
+- **Lock-Free / Zero-Allocation**: ArcSwap + DashMap store prepared orders for instantaneous access.
 
 ---
 
-# Latency Optimization Strategy
+# Quick Start
 
-The system minimizes click-to-execution latency by reducing work performed during the execution trigger.
+```bash
+# Build
+cargo build --release
 
-## Pre-Built Orders
+# Copy and edit configuration
+cp config.example.toml config.toml
 
-Orders are continuously prepared in the background and stored in memory.
+# Set API credentials
+export POLYMARKET_API_URL=https://clob.polymarket.com
+export POLYMARKET_API_KEY=your_api_key
 
-Execution only loads already prepared payloads.
-
-## Zero Allocation Execution Path
-
-The execution path avoids:
-
-- heap allocations
-- JSON serialization
-- order construction
-- cryptographic signing
-
-All expensive operations are performed before execution.
-
-## Lock-Free Data Access
-
-Prepared orders are stored using atomic pointer swaps (ArcSwap) allowing:
-
-- lock-free reads
-- constant-time access
-- no blocking during execution
-
-## Parallel Order Dispatch
-
-Orders for different markets are dispatched simultaneously using async tasks.
-
-Example:
-
-tokio::join!(
-    send_order(goal_market),
-    send_order(match_market)
-);
-
-## Persistent Network Connections
-
-HTTP connections are reused to avoid TCP and TLS handshake latency.
+# Run
+cargo run --release
+```
 
 ---
 
-# Execution Pipeline
+# Configuration
 
-Keypress  
-↓  
-Load prepared orders (atomic pointer read)  
-↓  
-Parallel network dispatch  
+## Environment Variables
 
-Target execution latency:
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `POLYMARKET_API_URL` | No | `https://api.polymarket.com` | Base URL for the Polymarket CLOB API |
+| `POLYMARKET_API_KEY` | No | — | API key sent as `Authorization: Bearer <key>` header |
+| `CONFIG_PATH` | No | `config.toml` | Path to the match configuration file |
 
-< 2 ms click-to-order submission
+## config.toml Format
+
+The configuration file defines which matches the bot monitors and what keyboard shortcuts trigger their execution.
+
+```toml
+[[matches]]
+id = "match_1"
+name = "Arsenal vs Chelsea"
+goal_market_id = "123456"
+match_market_id = "789012"
+max_price_limit = 0.95
+keyboard_shortcut = '1'
+
+[[matches]]
+id = "match_2"
+name = "Real Madrid vs Barcelona"
+goal_market_id = "345678"
+match_market_id = "901234"
+max_price_limit = 0.95
+keyboard_shortcut = '2'
+```
+
+### Field Reference
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique match identifier (used internally) |
+| `name` | string | Human-readable name shown in the dashboard |
+| `goal_market_id` | string | Polymarket market ID for the "goal" (e.g., first goal scorer) market |
+| `match_market_id` | string | Polymarket market ID for the match result (win/draw) market |
+| `max_price_limit` | float | Maximum acceptable price. Orders are rejected if the best available price exceeds this threshold |
+| `keyboard_shortcut` | char (optional) | Single key that triggers execution for this match. Omit if no shortcut is needed |
 
 ---
 
-# Example Interface
+# API Endpoints
 
-Ultra Fast Manual Trading Executor
+The bot communicates with the Polymarket CLOB API (or any compatible endpoint). All requests include the `Authorization: Bearer <key>` header if an API key is configured.
 
-Press 1-9 to execute matches instantly.
+## POST /api/v1/orders
 
-1  Arsenal vs Chelsea  
-2  Real Madrid vs Barcelona  
-3  PSG vs Marseille  
+Used by `submit_order()` / `submit_prepared_order()`.
 
-Pressing a key triggers:
+**Request body:**
 
-EXECUTE MATCH 1
+```json
+{
+    "marketId": "string",
+    "type": "market" | "limit",
+    "side": "buy" | "sell",
+    "size": 0.0,
+    "price": null | 0.0,
+    "timestamp": 1700000000000
+}
+```
 
-Sending goal market order  
-Sending match result order  
+**Headers:**
 
-Orders dispatched in parallel.
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `Authorization` | `Bearer <api_key>` (if configured) |
+
+---
+
+## POST /api/v1/orders/submit
+
+Used by `submit_prepared_order_internal()` — for orders that include a pre-computed signature.
+
+**Request body:**
+
+Same JSON payload as `/api/v1/orders`.
+
+**Headers:**
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `X-Signature` | `<hex-encoded signature>` (if present) |
+| `Authorization` | `Bearer <api_key>` (if configured) |
+
+---
+
+## GET /api/v1/markets
+
+Used by `get_markets()`. Returns a list of available markets.
+
+**Headers:** `Authorization: Bearer <api_key>` (if configured)
+
+---
+
+## GET /api/v1/markets/{marketId}/orderbook
+
+Used by `get_orderbook()`. Returns the current order book for a given market.
+
+**Headers:** `Authorization: Bearer <api_key>` (if configured)
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `marketId` | Polymarket market ID |
+
+---
+
+## GET /api/v1/account/balance
+
+Used by `get_balance()`. Returns the account balance.
+
+**Headers:** `Authorization: Bearer <api_key>` (if configured)
+
+---
+
+## POST /api/v1/orders/{orderId}/cancel
+
+Used by `cancel_order()`. Cancels a previously placed order.
+
+**Headers:** `Authorization: Bearer <api_key>` (if configured)
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `orderId` | ID of the order to cancel |
+
+---
+
+# Project Structure
+
+```
+src/
+  market_data/
+    orderbook.rs        — BTreeMap-based order book with O(log n) updates
+  execution/
+    prepared_orders.rs  — Order data structures, payload builder with timestamp validation
+    executor.rs         — Execution engine: bounded channels, parallel dispatch, HTTP integration
+    order_builder.rs    — Builds prepared orders from order book state
+  trading/
+    polymarket_client.rs — HTTP client wrapping all Polymarket API endpoints
+  match_engine/
+    engine.rs           — Match lifecycle management, market data handler
+  ui/
+    keyboard_dashboard.rs — Terminal UI with per-match keyboard shortcuts
+  config.rs             — TOML configuration deserialization
+  traits.rs             — TradingClient, ExecutionEngine, MatchManagerHandle traits
+  main.rs               — Binary entry point
+  lib.rs                — Library root with re-exports
+config.example.toml     — Example configuration file
+```
 
 ---
 
@@ -160,87 +259,12 @@ Orders dispatched in parallel.
 
 Rust ecosystem optimized for low latency.
 
-Tokio — async runtime  
-Reqwest — HTTP client with connection pooling  
-ArcSwap — lock-free atomic pointer swaps  
-DashMap — concurrent state management  
-Crossterm — terminal keyboard interface  
+Tokio — async runtime
+Reqwest — HTTP client with connection pooling
+ArcSwap — lock-free atomic pointer swaps
+DashMap — concurrent state management
+Crossterm — terminal keyboard interface
 Serde — API serialization
-
----
-
-# Running the Prototype
-
-Build:
-
-cargo build --release
-
-Run:
-
-cargo run
-
-Environment variables:
-
-POLYMARKET_API_URL=https://api.polymarket.com  
-POLYMARKET_API_KEY=your_api_key
-
----
-
-# Project Structure
-
-src/
-
-market_data/  
-- orderbook.rs  
-- listener.rs  
-
-execution/  
-- prepared_orders.rs  
-- executor.rs  
-- order_builder.rs  
-
-trading/  
-- polymarket_client.rs  
-
-match_engine/  
-- engine.rs  
-
-ui/  
-- keyboard_dashboard.rs  
-
-main.rs
-
----
-
-# Low Latency Design Principles
-
-Pre-built Orders  
-Orders are continuously prepared in the background based on market data.
-
-Lock-Free Access  
-Prepared orders are stored using atomic pointer swaps.
-
-Zero Execution Overhead  
-Execution path avoids:
-
-- heap allocations
-- complex calculations
-- blocking operations
-
-Parallel Dispatch  
-Orders are sent concurrently for minimal delay.
-
----
-
-# Use Case
-
-This architecture is designed for scenarios where human decision speed must be combined with machine-level execution speed.
-
-Examples:
-
-- live sports prediction markets
-- event-driven trading
-- manual arbitrage strategies
 
 ---
 

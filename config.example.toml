@@ -1,5 +1,13 @@
 # Ultra Fast Manual Trading Execution Bot Configuration
-# Copy this file to config.toml and customize for your needs
+# Copy this file to config.toml and customize for your needs.
+#
+# Field reference:
+#   id                — unique match identifier (used internally)
+#   name              — human-readable name shown in the dashboard
+#   goal_market_id    — Polymarket market ID for the goal market
+#   match_market_id   — Polymarket market ID for the match result market
+#   max_price_limit   — maximum acceptable order price
+#   keyboard_shortcut — single key that triggers execution (optional)
 
 [[matches]]
 id = "match_1"
