@@ -2,10 +2,11 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fmt;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PreparedOrder {
     pub id: Uuid,
     pub market_id: String,
@@ -15,6 +16,21 @@ pub struct PreparedOrder {
     pub price: Option<f64>,
     pub signature: Option<Bytes>,
     pub created_at: u64,
+}
+
+impl fmt::Debug for PreparedOrder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedOrder")
+            .field("id", &self.id)
+            .field("market_id", &self.market_id)
+            .field("order_type", &self.order_type)
+            .field("side", &self.side)
+            .field("size", &self.size)
+            .field("price", &self.price)
+            .field("signature", &self.signature.as_ref().map(|_| "[REDACTED]"))
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 impl PreparedOrder {
@@ -88,11 +104,12 @@ impl PreparedOrder {
 
 #[derive(Debug, Clone)]
 pub struct PreparedOrders {
+    #[allow(dead_code)]
     pub match_id: String,
     pub goal_market_order: PreparedOrder,
     pub match_result_order: PreparedOrder,
     #[allow(dead_code)]
-    // This field is not currently read, but useful for debugging/future features
+    // This field is useful for debugging/future features
     pub updated_at: u64,
 }
 

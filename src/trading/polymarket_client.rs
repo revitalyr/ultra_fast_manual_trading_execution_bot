@@ -48,9 +48,10 @@ impl PolymarketClient {
         if response.status().is_success() {
             Ok(response)
         } else {
+            let status = response.status();
             let error_text = response.text().await?;
-            let error_msg = format!("{}: {}", context, error_text);
-            error!("{}", error_msg);
+            error!("{} — HTTP {}", context, status);
+            let error_msg = format!("{} (HTTP {}): {}", context, status, error_text);
             Err(anyhow::anyhow!(error_msg))
         }
     }
@@ -81,7 +82,6 @@ impl PolymarketClient {
             .await?;
         let result: Value = response.json().await?;
         info!("Order submitted successfully: {}", order.id);
-        debug!("Order response: {}", result);
         Ok(result)
     }
 
@@ -227,7 +227,6 @@ impl TradingClient for PolymarketClient {
             .await?;
         let result: Value = response.json().await?;
         info!("Order submitted successfully: {}", order.id);
-        debug!("Order response: {}", result);
         Ok(result)
     }
 

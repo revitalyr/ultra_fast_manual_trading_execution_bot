@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 /// Allows swapping between different exchanges or mock implementations
 #[async_trait::async_trait]
 pub trait TradingClient: Send + Sync {
+    #[allow(dead_code)]
     async fn submit_order(&self, order: &PreparedOrder) -> Result<Value>;
 
     async fn submit_prepared_order(
@@ -31,6 +32,7 @@ pub trait TradingClient: Send + Sync {
 /// Trait for execution engine implementations
 /// Allows swapping between different execution strategies or mock implementations
 #[async_trait::async_trait]
+#[allow(dead_code)]
 pub trait ExecutionEngine: Send + Sync {
     fn update_prepared_orders(&self, match_id: &str, orders: Arc<PreparedOrders>);
 

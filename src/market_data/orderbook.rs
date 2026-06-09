@@ -25,21 +25,6 @@ pub struct OrderBook {
 #[serde(transparent)]
 pub struct OrderedFloat(u64);
 
-impl OrderedFloat {
-    /// Converts f64 to ordered bits. Handles:
-    /// - Negative floats: flips sign bit so -inf < ... < -0 < +0 < ... < +inf
-    /// - NaN: all NaNs sort at the end (greater than any number)
-    fn new(value: f64) -> Self {
-        let bits = value.to_bits();
-        // Flip sign bit for correct ordering: negative values become larger unsigned
-        // This makes -inf (0xFFF...) the largest, +inf (0x7FF...) the smallest positive
-        OrderedFloat(if bits & F64_SIGN_BIT != 0 {
-            !bits // Negative: invert all bits
-        } else {
-            bits | F64_SIGN_BIT // Positive: set sign bit
-        })
-    }
-}
 
 impl From<OrderedFloat> for f64 {
     fn from(ordered: OrderedFloat) -> Self {
@@ -67,8 +52,14 @@ impl OrderBook {
     /// Обновляет уровень Bid. Если размер 0 — удаляет уровень.
     /// Bids отсортированы по убыванию цены (OrderedFloat обеспечивает правильный порядок).
     /// O(log n) операция.
+    #[allow(dead_code)]
     pub fn update_bid(&mut self, price: f64, size: f64) {
-        let key = OrderedFloat::new(price);
+        let bits = price.to_bits();
+        let key = OrderedFloat(if bits & F64_SIGN_BIT != 0 {
+            !bits
+        } else {
+            bits ^ F64_SIGN_BIT
+        });
         if size <= 0.0 {
             self.bids.remove(&key);
         } else {
@@ -80,8 +71,14 @@ impl OrderBook {
     /// Обновляет уровень Ask. Если размер 0 — удаляет уровень.
     /// Asks отсортированы по возрастанию цены.
     /// O(log n) операция.
+    #[allow(dead_code)]
     pub fn update_ask(&mut self, price: f64, size: f64) {
-        let key = OrderedFloat::new(price);
+        let bits = price.to_bits();
+        let key = OrderedFloat(if bits & F64_SIGN_BIT != 0 {
+            !bits
+        } else {
+            bits ^ F64_SIGN_BIT
+        });
         if size <= 0.0 {
             self.asks.remove(&key);
         } else {
@@ -90,6 +87,7 @@ impl OrderBook {
         self.touch();
     }
 
+    #[allow(dead_code)]
     fn touch(&mut self) {
         self.updated_at = crate::util::now_millis();
     }
@@ -168,6 +166,7 @@ pub enum MarketUpdateType {
 /// }
 /// ```
 /// Returns `None` for unknown channels, missing fields, or malformed JSON.
+#[allow(dead_code)]
 pub fn parse_ws_message(message: &str) -> Option<MarketUpdate> {
     let value: Value = serde_json::from_str(message).ok()?;
     let channel = value.get("channel")?.as_str()?;

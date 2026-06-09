@@ -117,11 +117,11 @@ impl ExecutionEngine {
             );
 
             // Log results for monitoring
-            if let Err(e) = &goal_result {
-                error!("Goal order execution failed: {}", e);
+            if goal_result.is_err() {
+                error!("Goal order execution failed for match {}", request.match_id);
             }
-            if let Err(e) = &match_result {
-                error!("Match order execution failed: {}", e);
+            if match_result.is_err() {
+                error!("Match order execution failed for match {}", request.match_id);
             }
         }
 
