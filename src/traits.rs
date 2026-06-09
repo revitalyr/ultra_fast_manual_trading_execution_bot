@@ -1,5 +1,6 @@
 use crate::execution::prepared_orders::PreparedOrder;
 use crate::execution::prepared_orders::PreparedOrders;
+use crate::match_engine::MatchConfig;
 use anyhow::Result;
 use bytes::Bytes;
 use serde_json::Value;
@@ -38,4 +39,12 @@ pub trait ExecutionEngine: Send + Sync {
     fn get_execution_sender(
         &self,
     ) -> mpsc::Sender<crate::execution::prepared_orders::ExecutionRequest>;
+}
+
+/// Trait for the match manager interface consumed by the UI layer.
+/// Allows mocking MatchManager in dashboard tests without spawning engines.
+#[async_trait::async_trait]
+pub trait MatchManagerHandle: Send + Sync {
+    async fn execute_match(&self, match_id: &str) -> Result<()>;
+    fn get_match_configs(&self) -> Vec<Arc<MatchConfig>>;
 }

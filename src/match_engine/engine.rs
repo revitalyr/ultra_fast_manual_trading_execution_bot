@@ -1,5 +1,6 @@
 use crate::execution::{ExecutionEngine, OrderPreBuilder, PreparedOrder, PreparedOrders};
 use crate::market_data::{MarketUpdate, OrderBook};
+use crate::traits::MatchManagerHandle;
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
@@ -225,10 +226,6 @@ impl MatchManager {
         self.matches.get(match_id).map(|entry| entry.clone())
     }
 
-    pub fn get_all_matches(&self) -> Vec<Arc<MatchEngine>> {
-        self.matches.iter().map(|entry| entry.clone()).collect()
-    }
-
     pub async fn execute_match(&self, match_id: &str) -> Result<()> {
         if let Some(engine) = self.get_match(match_id) {
             engine.execute().await
@@ -243,5 +240,19 @@ impl MatchManager {
         // Engines are now started automatically in add_match
         info!("All {} match engines are active", self.matches.len());
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl MatchManagerHandle for MatchManager {
+    async fn execute_match(&self, match_id: &str) -> Result<()> {
+        self.execute_match(match_id).await
+    }
+
+    fn get_match_configs(&self) -> Vec<Arc<MatchConfig>> {
+        self.matches
+            .iter()
+            .map(|entry| Arc::new(entry.get_config().clone()))
+            .collect()
     }
 }

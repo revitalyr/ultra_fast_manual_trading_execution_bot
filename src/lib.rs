@@ -63,5 +63,7 @@ pub use execution::{
 pub use market_data::{MarketUpdate, OrderBook, OrderSide, OrderType};
 pub use match_engine::{MatchConfig, MatchEngine, MatchManager};
 pub use trading::PolymarketClient;
-pub use traits::{ExecutionEngine as ExecutionEngineTrait, TradingClient};
+pub use traits::{
+    ExecutionEngine as ExecutionEngineTrait, MatchManagerHandle, TradingClient,
+};
 pub use ui::KeyboardDashboard;

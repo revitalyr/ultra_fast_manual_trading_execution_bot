@@ -1,4 +1,5 @@
-use crate::match_engine::{MatchConfig, MatchManager};
+use crate::match_engine::MatchConfig;
+use crate::traits::MatchManagerHandle;
 use anyhow::Result;
 use crossterm::{
     event::{self, KeyCode, KeyEvent},
@@ -117,11 +118,11 @@ impl InputHandler {
 
 // Business logic controller - handles execution
 pub struct DashboardController {
-    match_manager: Arc<MatchManager>,
+    match_manager: Arc<dyn MatchManagerHandle>,
 }
 
 impl DashboardController {
-    pub fn new(match_manager: Arc<MatchManager>) -> Self {
+    pub fn new(match_manager: Arc<dyn MatchManagerHandle>) -> Self {
         Self { match_manager }
     }
 
@@ -161,12 +162,8 @@ impl Drop for KeyboardDashboard {
 }
 
 impl KeyboardDashboard {
-    pub fn new(match_manager: Arc<MatchManager>) -> Self {
-        let matches = match_manager
-            .get_all_matches()
-            .iter()
-            .map(|engine| Arc::new(engine.get_config().clone()))
-            .collect();
+    pub fn new(match_manager: Arc<dyn MatchManagerHandle>) -> Self {
+        let matches = match_manager.get_match_configs();
 
         Self {
             controller: DashboardController::new(match_manager),
