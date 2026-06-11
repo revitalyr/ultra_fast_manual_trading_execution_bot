@@ -7,7 +7,7 @@ name = "ultra_fast_manual_trading_execution_bot"
 version = "0.1.0"
 edition = "2021"
 authors = ["Trading Bot Team"]
-description = "Ultra-fast manual trading execution bot for Polymarket"
+description = "Ultra-low latency manual trading execution bot for Polymarket. Built in Rust with lock-free data structures for sub-millisecond order dispatch"
 
 [lib]
 name = "ultra_fast_manual_trading_execution_bot"
