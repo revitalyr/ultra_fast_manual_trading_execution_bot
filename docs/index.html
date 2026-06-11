@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultra Fast Manual Trading Execution Bot — Documentation</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<style>
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 30px 20px;
+    color: #333;
+}
+.main-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 15px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+.header {
+    padding: 40px 40px 30px;
+    text-align: center;
+    background: #f8f9ff;
+    border-bottom: 2px solid #eee;
+}
+.header h1 {
+    font-size: 2rem;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+}
+.header p {
+    color: #666;
+    font-size: 1rem;
+    max-width: 700px;
+    margin: 0 auto;
+    line-height: 1.5;
+}
+.nav-bar {
+    display: flex;
+    flex-wrap: wrap;
+    background: #f0f0f5;
+    border-bottom: 2px solid #e0e0e5;
+    gap: 4px;
+    padding: 8px 8px 0;
+}
+.nav-tab {
+    padding: 12px 20px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #666;
+    border-radius: 10px 10px 0 0;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.nav-tab:hover {
+    background: rgba(102, 126, 234, 0.08);
+    transform: translateY(-2px);
+    color: #333;
+}
+.nav-tab.active {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+}
+.content {
+    padding: 30px 40px 40px;
+}
+.tab-content {
+    display: none;
+    animation: fadeIn 0.5s ease;
+}
+.tab-content.active {
+    display: block;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.diagram-wrapper {
+    position: relative;
+    margin: 20px 0;
+    border: 1px solid #e0e0e5;
+    border-radius: 10px;
+    background: #fafbff;
+}
+.scale-controls {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.95);
+    padding: 4px 8px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.scale-controls button {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #555;
+    line-height: 1;
+}
+.scale-controls button:hover {
+    background: #667eea;
+    color: #fff;
+    border-color: #667eea;
+}
+.scale-display {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    min-width: 40px;
+    text-align: center;
+}
+.diagram-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    padding-top: 50px;
+    padding-bottom: 16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    min-height: 250px;
+}
+.feature-section {
+    margin: 24px 0;
+    padding: 20px 24px;
+    background: #f8f9ff;
+    border-radius: 10px;
+    border-left: 4px solid #667eea;
+}
+.feature-section h3 {
+    font-size: 1.1rem;
+    color: #444;
+    margin-bottom: 12px;
+}
+.feature-list {
+    list-style: none;
+    padding: 0;
+}
+.feature-list li {
+    padding: 4px 0;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #555;
+}
+.feature-list li::before {
+    content: "\2705";
+    margin-right: 8px;
+}
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9rem;
+}
+.info-table th {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+}
+.info-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #e8e8ee;
+    color: #444;
+}
+.info-table tr:nth-child(even) td {
+    background: #f8f9fa;
+}
+.info-table tr:hover td {
+    background: #eef0ff;
+}
+.section-title {
+    font-size: 1.3rem;
+    color: #444;
+    margin: 24px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #eee;
+}
+.sub-title {
+    font-size: 1rem;
+    color: #666;
+    margin: 16px 0 8px;
+    font-weight: 600;
+}
+.description-text {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: #555;
+    margin: 12px 0;
+}
+.tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 2px 3px;
+}
+.tag-rust { background: #f75208; color: #fff; }
+.tag-hft { background: #667eea; color: #fff; }
+.tag-infra { background: #28a745; color: #fff; }
+.tag-ui { background: #ffc107; color: #333; }
+@media (max-width: 768px) {
+    body { padding: 10px; }
+    .header { padding: 24px 16px 20px; }
+    .header h1 { font-size: 1.4rem; }
+    .content { padding: 20px 16px 30px; }
+    .nav-bar { flex-wrap: nowrap; overflow-x: auto; padding: 6px 6px 0; gap: 2px; }
+    .nav-tab { padding: 10px 14px; font-size: 0.8rem; }
+    .scale-controls button { width: 26px; height: 26px; font-size: 0.9rem; }
+    .diagram-container { padding-top: 44px; }
+}
+</style>
+</head>
+<body>
+<div class="main-container">
+    <div class="header">
+        <h1>Ultra Fast Manual Trading Execution Bot</h1>
+        <p>Ultra-low latency manual trading execution bot for Polymarket. Built in Rust with lock-free data structures for sub-millisecond order dispatch.</p>
+    </div>
+
+    <nav class="nav-bar">
+        <button class="nav-tab active" data-tab="overview">📊 Overview</button>
+        <button class="nav-tab" data-tab="architecture">🏗️ Architecture</button>
+        <button class="nav-tab" data-tab="lifecycle">🔄 Order Lifecycle</button>
+        <button class="nav-tab" data-tab="configuration">⚙️ Configuration</button>
+        <button class="nav-tab" data-tab="security">🛡️ Security</button>
+        <button class="nav-tab" data-tab="deployment">🚀 Deployment</button>
+    </nav>
+
+    <div class="content">
+
+        <!-- ==================== OVERVIEW ==================== -->
+        <div class="tab-content active" id="overview">
+            <h2>📊 System Overview</h2>
+            <p class="description-text">
+                The Ultra Fast Manual Trading Execution Bot is a Rust-based system engineered for professional 
+                high-frequency manual trading on <strong>Polymarket</strong>. It uses a three-layer architecture 
+                with lock-free data structures to achieve sub-millisecond execution latency.
+            </p>
+
+            <div class="feature-section">
+                <h3>Key Capabilities</h3>
+                <ul class="feature-list">
+                    <li>Ultra-low latency execution with pre-built orders stored in lock-free structures</li>
+                    <li>Parallel order dispatch for goal market and match result orders</li>
+                    <li>Multi-match support with individual keyboard shortcuts per match</li>
+                    <li>Minimal terminal UI designed for fastest possible execution</li>
+                    <li>Zero-allocation execution path for maximum performance</li>
+                </ul>
+            </div>
+
+            <h3 class="sub-title">Technology Stack</h3>
+            <p>
+                <span class="tag tag-rust">Rust</span>
+                <span class="tag tag-hft">Tokio</span>
+                <span class="tag tag-hft">Reqwest</span>
+                <span class="tag tag-hft">ArcSwap</span>
+                <span class="tag tag-hft">DashMap</span>
+                <span class="tag tag-ui">Crossterm</span>
+                <span class="tag tag-infra">Serde</span>
+                <span class="tag tag-infra">tokio-tungstenite</span>
+                <span class="tag tag-hft">Polymarket CLOB API</span>
+            </p>
+
+            <h3 class="sub-title">High-Level Architecture</h3>
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="overview-diagram" data-original-definition="">
+graph TD
+    A[Market Data Layer] --> B[Order Preparation Layer]
+    B --> C[Execution Fast Path]
+    C --> D[Goal Market Order]
+    C --> E[Match Result Order]
+    D --> F[Polymarket API]
+    E --> F
+
+    classDef primary fill:#667eea,color:#fff
+    classDef success fill:#28a745,color:#fff
+    classDef warning fill:#ffc107,color:#333
+    classDef helper fill:#6c757d,color:#fff
+
+    class A,B,C primary
+    class D,E success
+    class F helper
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Layer Description</h3>
+            <table class="info-table">
+                <thead><tr><th>Layer</th><th>Role</th><th>Technology</th></tr></thead>
+                <tbody>
+                    <tr><td>Market Data Layer</td><td>Receives live orderbook updates via WebSocket. Lock-free data structures ensure zero contention.</td><td>tokio-tungstenite, ArcSwap, BTreeMap</td></tr>
+                    <tr><td>Order Preparation Layer</td><td>Continuously rebuilds and pre-signs orders in memory. No computation occurs on trigger.</td><td>OrderPreBuilder, PreparedOrders, ArcSwap</td></tr>
+                    <tr><td>Execution Fast Path</td><td>Keypress triggers parallel network dispatch. Zero-allocation execution with sub-2ms latency.</td><td>ExecutionEngine, tokio::join!, reqwest</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== ARCHITECTURE ==================== -->
+        <div class="tab-content" id="architecture">
+            <h2>🏗️ Component Architecture</h2>
+            <p class="description-text">
+                The system follows an actor-based design with lock-free shared state. Each component runs 
+                in its own async task and communicates via channels. The architecture prioritizes 
+                zero-contention reads and minimal latency on the execution path.
+            </p>
+
+            <div class="feature-section">
+                <h3>Core Components</h3>
+                <ul class="feature-list">
+                    <li><strong>PolymarketClient</strong> — HTTP client wrapping all Polymarket API endpoints with connection pooling</li>
+                    <li><strong>ExecutionEngine</strong> — Bounded channel dispatch with parallel order submission via tokio::join!</li>
+                    <li><strong>MatchManager</strong> — Registry of active matches, coordinates lifecycle and keyboard dispatch</li>
+                    <li><strong>MatchEngine</strong> — Per-match state machine: orderbooks, prepared orders, market data handler</li>
+                    <li><strong>OrderPreBuilder</strong> — Builds goal and match orders from orderbook snapshots with price validation</li>
+                    <li><strong>KeyboardDashboard</strong> — Terminal UI with raw mode input, displays matches and execution feedback</li>
+                </ul>
+            </div>
+
+            <h3 class="sub-title">Component Interaction</h3>
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="architecture-diagram" data-original-definition="">
+sequenceDiagram
+    participant Trader
+    participant Dashboard as KeyboardDashboard
+    participant Manager as MatchManager
+    participant Engine as MatchEngine
+    participant Executor as ExecutionEngine
+    participant Builder as OrderPreBuilder
+    participant API as Polymarket API
+
+    activate Dashboard
+    Trader->>Dashboard: Press key 1-9
+    Dashboard->>Manager: execute_match(match_id)
+    activate Manager
+    Manager->>Engine: execute()
+    activate Engine
+    Engine->>Executor: execute_match(match_id)
+    activate Executor
+    Executor->>Executor: load orders from DashMap
+    Executor->>API: POST goal market order
+    Executor->>API: POST match result order
+    activate API
+    API-->>Executor: order responses
+    deactivate API
+    Executor-->>Engine: ExecutionResult
+    deactivate Executor
+    Engine-->>Manager: result
+    deactivate Engine
+    Manager-->>Dashboard: feedback
+    deactivate Manager
+    Dashboard-->>Trader: display result
+    deactivate Dashboard
+
+    rect rgba(102, 126, 234, 0.05)
+        Note over Builder,API: Orders pre-built continuously in background
+        Engine->>Builder: build_orders_for_match()
+        Builder-->>Engine: PreparedOrders
+        Engine->>Executor: update_prepared_orders()
+    end
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Concurrency Model</h3>
+            <table class="info-table">
+                <thead><tr><th>Component</th><th>Mechanism</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td>PreparedOrders</td><td>Arc&lt;ArcSwap&lt;PreparedOrders&gt;&gt;</td><td>Lock-free atomic update, readers never block writers</td></tr>
+                    <tr><td>OrderBooks</td><td>Arc&lt;ArcSwap&lt;OrderBook&gt;&gt;</td><td>Consistent snapshots for order building</td></tr>
+                    <tr><td>Match registry</td><td>DashMap&lt;String, Arc&lt;MatchEngine&gt;&gt;</td><td>Thread-safe concurrent access by match ID</td></tr>
+                    <tr><td>Execution requests</td><td>mpsc::bounded (cap 1000)</td><td>Backpressure on execution dispatch</td></tr>
+                    <tr><td>Market data</td><td>mpsc::unbounded</td><td>High-throughput lossless market data ingestion</td></tr>
+                    <tr><td>Parallel dispatch</td><td>tokio::join!</td><td>Simultaneous goal + match order submission</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== ORDER LIFECYCLE ==================== -->
+        <div class="tab-content" id="lifecycle">
+            <h2>🔄 Order Lifecycle</h2>
+            <p class="description-text">
+                Orders flow through a continuous preparation pipeline and are dispatched instantly on 
+                keypress. The execution path performs zero allocations and zero computation.
+            </p>
+
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="lifecycle-diagram" data-original-definition="">
+graph TD
+    A[Market Data Arrives] --> B[MarketUpdate via WebSocket]
+    B --> C[MatchEngine handler burst-drains channel]
+    C --> D[OrderPreBuilder reads orderbooks]
+    D --> E[Build goal market order]
+    D --> F[Build match result order]
+    E --> G[PreparedOrders atomically swapped into ArcSwap]
+    F --> G
+    G --> H[ExecutionEngine cache updated]
+    H --> I[User presses keyboard shortcut]
+    I --> J[ExecutionEngine loads orders from DashMap]
+    J --> K[Parallel dispatch via tokio join]
+    K --> L[Goal market order - POST]
+    K --> M[Match result order - POST]
+    L --> N[Polymarket API]
+    M --> N
+    N --> O[ExecutionResult logged]
+
+    classDef primary fill:#667eea,color:#fff
+    classDef success fill:#28a745,color:#fff
+    classDef warning fill:#ffc107,color:#333
+    classDef helper fill:#6c757d,color:#fff
+
+    class A,B,C helper
+    class D,E,F primary
+    class G,H,J primary
+    class I warning
+    class K,L,M success
+    class N,O helper
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Order Types</h3>
+            <table class="info-table">
+                <thead><tr><th>Order</th><th>Type</th><th>Side</th><th>Price</th><th>Size</th></tr></thead>
+                <tbody>
+                    <tr><td>Goal Market Order</td><td>Market</td><td>Buy</td><td>Market price (best ask)</td><td>Best ask size</td></tr>
+                    <tr><td>Match Result Order</td><td>Limit</td><td>Buy</td><td>Best ask price ≤ max_price_limit</td><td>Best ask size</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="sub-title">Performance Critical Path</h3>
+            <table class="info-table">
+                <thead><tr><th>Stage</th><th>Latency Budget</th></tr></thead>
+                <tbody>
+                    <tr><td>KeyPress to MatchEngine</td><td>&lt; 0.1 ms</td></tr>
+                    <tr><td>MatchEngine to ExecutionRequest</td><td>&lt; 0.1 ms</td></tr>
+                    <tr><td>ExecutionEngine dispatch</td><td>&lt; 0.5 ms</td></tr>
+                    <tr><td>Network round-trip</td><td>&lt; 1.0 ms</td></tr>
+                    <tr><td>Total end-to-end latency</td><td>&lt; 2.0 ms</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== CONFIGURATION ==================== -->
+        <div class="tab-content" id="configuration">
+            <h2>⚙️ Configuration</h2>
+            <p class="description-text">
+                The bot is configured via a TOML file and environment variables. Each match defines 
+                a goal market and a match result market on Polymarket, with an optional keyboard shortcut.
+            </p>
+
+            <h3 class="sub-title">Configuration Loading</h3>
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="configuration-diagram" data-original-definition="">
+graph LR
+    A[CONFIG_PATH env var] --> B{File exists}
+    B --> C[Read config.toml]
+    B --> D[Use hardcoded defaults]
+    C --> E[Deserialize TOML to Config]
+    E --> F[MatchConfig vec]
+    D --> F
+    F --> G[MatchManager add_match]
+    G --> H[MatchEngine per match]
+
+    classDef primary fill:#667eea,color:#fff
+    classDef success fill:#28a745,color:#fff
+    classDef warning fill:#ffc107,color:#333
+    classDef helper fill:#6c757d,color:#fff
+
+    class A,D helper
+    class B warning
+    class C,E,F primary
+    class G,H success
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Environment Variables</h3>
+            <table class="info-table">
+                <thead><tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>POLYMARKET_API_URL</code></td><td>No</td><td><code>https://api.polymarket.com</code></td><td>Base URL for Polymarket CLOB API</td></tr>
+                    <tr><td><code>POLYMARKET_API_KEY</code></td><td>No</td><td>—</td><td>API key sent as Bearer token</td></tr>
+                    <tr><td><code>CONFIG_PATH</code></td><td>No</td><td><code>config.toml</code></td><td>Path to match configuration file</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="sub-title">Match Configuration Format</h3>
+            <table class="info-table">
+                <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>id</code></td><td>string</td><td>Unique match identifier used internally</td></tr>
+                    <tr><td><code>name</code></td><td>string</td><td>Human-readable name shown in dashboard</td></tr>
+                    <tr><td><code>goal_market_id</code></td><td>string</td><td>Polymarket market ID for goal market</td></tr>
+                    <tr><td><code>match_market_id</code></td><td>string</td><td>Polymarket market ID for match result market</td></tr>
+                    <tr><td><code>max_price_limit</code></td><td>float</td><td>Maximum acceptable price; orders rejected if exceeded</td></tr>
+                    <tr><td><code>keyboard_shortcut</code></td><td>char</td><td>Single key that triggers execution (optional)</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="sub-title">Example config.toml</h3>
+            <pre style="background:#f5f5fa;padding:16px;border-radius:8px;overflow-x:auto;font-size:0.85rem;line-height:1.5;"><code>[[matches]]
+id = "match_1"
+name = "Arsenal vs Chelsea"
+goal_market_id = "123456"
+match_market_id = "789012"
+max_price_limit = 0.95
+keyboard_shortcut = '1'
+
+[[matches]]
+id = "match_2"
+name = "Real Madrid vs Barcelona"
+goal_market_id = "345678"
+match_market_id = "901234"
+max_price_limit = 0.95
+keyboard_shortcut = '2'</code></pre>
+        </div>
+
+        <!-- ==================== SECURITY ==================== -->
+        <div class="tab-content" id="security">
+            <h2>🛡️ Security</h2>
+            <p class="description-text">
+                The bot handles API credentials securely and communicates exclusively over HTTPS. 
+                All sensitive data is managed with memory-safe practices.
+            </p>
+
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="security-diagram" data-original-definition="">
+graph TD
+    A[Environment Variable] --> B[POLYMARKET_API_KEY]
+    B --> C[SecretString wrapper]
+    C --> D[Authorization Bearer header]
+    D --> E[HTTPS POST to Polymarket]
+    E --> F[TLS 1.3 encrypted transport]
+    A --> G[POLYMARKET_API_URL]
+    G --> E
+
+    classDef primary fill:#667eea,color:#fff
+    classDef success fill:#28a745,color:#fff
+    classDef warning fill:#ffc107,color:#333
+    classDef helper fill:#6c757d,color:#fff
+
+    class A,G helper
+    class B,C primary
+    class D,E,F success
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Security Measures</h3>
+            <table class="info-table">
+                <thead><tr><th>Measure</th><th>Implementation</th></tr></thead>
+                <tbody>
+                    <tr><td>API key storage</td><td>Environment variable with secrecy::SecretString for memory-safe handling</td></tr>
+                    <tr><td>Transport encryption</td><td>All communication over HTTPS with reqwest TLS support</td></tr>
+                    <tr><td>Authentication</td><td>Authorization: Bearer header on every request</td></tr>
+                    <tr><td>No secrets in logs</td><td>API key never written to logs; structured logging without sensitive data</td></tr>
+                    <tr><td>Order signing</td><td>Pre-computed signatures for order validation (optional X-Signature header)</td></tr>
+                    <tr><td>Connection pooling</td><td>Reqwest client with 60s idle timeout, proper connection reuse</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== DEPLOYMENT ==================== -->
+        <div class="tab-content" id="deployment">
+            <h2>🚀 Deployment</h2>
+            <p class="description-text">
+                The bot compiles to a single static binary with LTO optimization. Deployment is 
+                straightforward with no runtime dependencies beyond a Linux environment.
+            </p>
+
+            <div class="diagram-wrapper">
+                <div class="scale-controls">
+                    <button data-scale-delta="-10" title="Zoom out">−</button>
+                    <span class="scale-display">100%</span>
+                    <button data-scale-delta="10" title="Zoom in">+</button>
+                    <button data-reset-scale title="Reset zoom">⟲</button>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid" id="deployment-diagram" data-original-definition="">
+graph LR
+    A[cargo build --release] --> B[LTO + codegen-units 1]
+    B --> C[Single static binary]
+    C --> D[Copy binary to server]
+    D --> E[Create config.toml]
+    E --> F[Set env variables]
+    F --> G[Run binary]
+    G --> H[Terminal UI appears]
+    H --> I[Ready for trading]
+
+    classDef primary fill:#667eea,color:#fff
+    classDef success fill:#28a745,color:#fff
+    classDef warning fill:#ffc107,color:#333
+    classDef helper fill:#6c757d,color:#fff
+
+    class A,C helper
+    class B,D,E,F primary
+    class G,H,I success
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="sub-title">Build Steps</h3>
+            <table class="info-table">
+                <thead><tr><th>Step</th><th>Command</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>Build</td><td><code>cargo build --release</code></td><td>Compile with LTO, single codegen unit, abort on panic</td></tr>
+                    <tr><td>Configure</td><td><code>cp config.example.toml config.toml</code></td><td>Copy and edit match configuration</td></tr>
+                    <tr><td>Set API key</td><td><code>$env:POLYMARKET_API_KEY = "..."</code></td><td>Set API credentials as environment variable</td></tr>
+                    <tr><td>Run</td><td><code>cargo run --release</code></td><td>Start the bot with terminal UI</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="sub-title">Release Profile Optimizations</h3>
+            <table class="info-table">
+                <thead><tr><th>Setting</th><th>Value</th><th>Benefit</th></tr></thead>
+                <tbody>
+                    <tr><td>opt-level</td><td>3</td><td>Maximum optimization for speed</td></tr>
+                    <tr><td>lto</td><td>true</td><td>Link-time optimization across crates</td></tr>
+                    <tr><td>codegen-units</td><td>1</td><td>Single codegen unit for maximum inlining</td></tr>
+                    <tr><td>panic</td><td>abort</td><td>No unwinding tables, smaller binary</td></tr>
+                    <tr><td>target-cpu</td><td>native (optional)</td><td>CPU-specific instruction set tuning</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="sub-title">API Endpoints</h3>
+            <table class="info-table">
+                <thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td>POST</td><td>/api/v1/orders</td><td>Submit a market or limit order</td></tr>
+                    <tr><td>POST</td><td>/api/v1/orders/submit</td><td>Submit order with pre-computed signature</td></tr>
+                    <tr><td>GET</td><td>/api/v1/markets</td><td>List available markets</td></tr>
+                    <tr><td>GET</td><td>/api/v1/markets/{marketId}/orderbook</td><td>Get orderbook snapshot</td></tr>
+                    <tr><td>GET</td><td>/api/v1/account/balance</td><td>Get account balance</td></tr>
+                    <tr><td>POST</td><td>/api/v1/orders/{orderId}/cancel</td><td>Cancel a placed order</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div><!-- /content -->
+</div><!-- /main-container -->
+
+<script src="mermaid-height-util.js"></script>
+<script>
+const mermaidReady = (async function() {
+    await mermaid.initialize({
+        startOnLoad: false,
+        theme: 'default',
+        themeVariables: {
+            primaryColor: '#667eea',
+            primaryTextColor: '#333',
+            lineColor: '#667eea',
+            secondaryColor: '#764ba2',
+            fontSize: '14px'
+        },
+        flowchart: { useMaxWidth: false, htmlLabels: true }
+    });
+})();
+
+(function() {
+    document.querySelectorAll('.mermaid').forEach(el => {
+        el.dataset.originalDefinition = el.textContent.trim();
+    });
+
+    const adjuster = new MermaidHeightAdjuster();
+    adjuster.setupTabSwitching();
+    adjuster.setupScaleControls();
+
+    const activeTab = document.querySelector('.tab-content.active');
+    if (activeTab) {
+        adjuster.renderAndScale(activeTab);
+    }
+
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.tab-content.active').forEach(tc => {
+            adjuster.adjustDiagram(tc);
+        });
+    });
+})();
+</script>
+</body>
+</html>

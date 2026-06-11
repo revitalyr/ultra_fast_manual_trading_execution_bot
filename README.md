@@ -8,6 +8,8 @@ Orders are prepared in advance and stored in memory so the execution path perfor
 
 Target use case: manual high-speed trading during live events.
 
+> 📖 **[Interactive Documentation](docs/)** — Architecture diagrams, configuration guide, security overview, and deployment instructions.
+
 ---
 
 # Key Features
